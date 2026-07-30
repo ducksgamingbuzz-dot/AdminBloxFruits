@@ -292,7 +292,7 @@ local function processCommand(message, fromCommandBar)
 		local lvl = tonumber(args[2])
 		if lvl then setLevel(lvl) end
 
-	elseif cmd == "race" then
+	elseif cmd == "setrace" then
 		local raceName = args[2]
 		if raceName then setRace(raceName) end
 
@@ -309,7 +309,7 @@ local function processCommand(message, fromCommandBar)
 		local amount = tonumber(args[2])
 		if amount then setBounty(amount) end
 
-	elseif cmd == "beli" then
+	elseif cmd == "setbeli" then
 		local amount = tonumber(args[2])
 		if amount then setBeli(amount) end
 
@@ -329,14 +329,14 @@ local function processCommand(message, fromCommandBar)
 		local amount = tonumber(args[2])
 		if amount then setPoints(amount) end
 
-	elseif cmd == "speed" then
+	elseif cmd == "wspeed" then
 		local multiplier = tonumber(args[2])
 		if multiplier then setSpeed(multiplier) end
 
 	elseif cmd == "rage" then
 		fillRage()
 
-	elseif cmd == "size" then
+	elseif cmd == "setsize" then
 		local scale = tonumber(args[2])
 		if scale then setSize(scale) end
 
@@ -360,7 +360,7 @@ local function processCommand(message, fromCommandBar)
 	elseif cmd == "hakis" then
 		local character = player.Character
 		if character then
-			for _, hakiName in {"KenHaki", "BusoHaki"} do
+			for _, hakiName in ipairs({"KenHaki", "BusoHaki"}) do
 				local haki = character:FindFirstChild(hakiName)
 				if haki and haki:IsA("BoolValue") then haki.Value = true end
 			end
@@ -371,7 +371,7 @@ local function processCommand(message, fromCommandBar)
 			end
 		end
 
-	elseif cmd == "aw" then
+	elseif cmd == "awtool" then
 		local character = player.Character
 		if character then
 			local tool = character:FindFirstChildOfClass("Tool")
@@ -385,7 +385,7 @@ local function processCommand(message, fromCommandBar)
 			end
 		end
 
-	elseif cmd == "fun" then
+	elseif cmd == "funattr" then
 		player:SetAttribute("GANKS", nil)
 		player:SetAttribute("NSUNS", 2)
 		player:SetAttribute("GANKSvolley", nil)
@@ -424,7 +424,7 @@ local function processCommand(message, fromCommandBar)
 	elseif cmd == "fm" then
 		Lighting.ClockTime = 14
 
-	elseif cmd == "unfm" then
+	elseif cmd == "night" then
 		Lighting.ClockTime = 0
 
 	elseif cmd == "reset" then
@@ -2674,8 +2674,8 @@ local function createAdminGUI()
 	cmdPad.Parent = commandsPage
 
 	local commandList = {
-		{cmd = "/kunai", desc = "Creates the God's Palace pocket dimension + teleport tool"},
-		{cmd = "/kunai2", desc = "Creates the Black Hole dimension + teleport tool"},
+		{cmd = "/kamui", desc = "Creates the God's Palace pocket dimension + teleport tool"},
+		{cmd = "/kamui2", desc = "Creates the Black Hole dimension + teleport tool"},
 		{cmd = "/about [player]", desc = "Shows info about a player (Beli, Level, etc.)"},
 		{cmd = "/view [player]", desc = "Spectate another player's camera"},
 		{cmd = "/unview", desc = "Stop spectating and reset camera"},
@@ -3587,7 +3587,7 @@ processCommand = function(message)
 		playDimensionSound(116866873116581)
 		showSpinningImageOverlay(1329924384, 2)
 		showWelcomeMessage("Welcome To Ciphers Dimension", 5)
-		print("Teleported into God's Palace Dimension. Type /kunai again to return.")
+		print("Teleported into God's Palace Dimension. Type /kamui again to return.")
 		return
 	end
 
@@ -3628,7 +3628,7 @@ processCommand = function(message)
 		playDimensionSound(116866873116581)
 		showSpinningImageOverlay(1329924384, 2)
 		showWelcomeMessage("Welcome To Black Hole Dimension", 5)
-		print("Teleported into Black Hole Dimension. Type /kunai2 again to return.")
+		print("Teleported into Black Hole Dimension. Type /kamui2 again to return.")
 		return
 	end
 
@@ -4248,22 +4248,22 @@ processCommand = function(message)
 			{"/restore <player>", "Restore player's head size"},
 			{"/k <player>", "Kill a player"},
 			{"/s <level>", "Set level"},
-			{"/race2 <player> <race>", "Change another player's race"},
+			{"/setrace <name>", "Set race directly (ValueBase)"},
 			{"/st /ast <num>", "Set stat points"},
-			{"/b /beli <num>", "Set beli"},
+			{"/b /setbeli <num>", "Set beli (direct ValueBase)"},
 			{"/beli2 <num>", "Set beli (alt)"},
 			{"/fragments <num>", "Set fragments"},
 			{"/fragments2 <num>", "Set fragments (alt)"},
 			{"/points <num>", "Set points"},
 			{"/rage", "Set rage to 100"},
-			{"/size2 <num>", "Set size"},
-			{"/sizefruit <num>", "Set fruit size"},
+			{"/wspeed <mult>", "Set WalkSpeed (16×multiplier)"},
+			{"/setsize <scale>", "Scale character size"},
 			{"/exp <num>", "Set experience"},
-			{"/hakis <num>", "Set haki stats"},
-			{"/fun /unfun /opfun /unopfun", "Fun mode toggles"},
+			{"/awtool", "Toggle awakening on held tool"},
+			{"/funattr /unfun /opfun /unopfun", "Fun attribute toggles"},
 			{"/volley2 /unvolley2", "Volley toggles"},
 			{"/reducecooldown <num>", "Reduce all cooldowns"},
-			{"/fm", "Set full moon"},
+			{"/night", "Set time to night (ClockTime=0)"},
 			{"/reset", "Reset character (kill)"},
 			{"/disguise /imp <name>", "Disguise as another player"},
 			{"/rt2", "Refill race energy"},
@@ -4293,327 +4293,6 @@ processCommand = function(message)
 end
 
 player.Chatted:Connect(processCommand)
-	end
-
-	-- Utilities
-	if cmd == "/awakening" then
-		toggleAwakeningUI()
-		return
-	end
-
-	-- Buso Haki stage
-	if cmd == "/buso" then
-		if value then
-			local stage = tonumber(value)
-			if stage and stage >= 1 and stage <= 5 then
-				ReplicatedStorage.Remotes.CommF_:InvokeServer("ChangeBusoStage", stage)
-				print("Buso stage changed to: " .. stage)
-			else
-				print("Please choose a valid Buso stage between 1 and 5. Example: /buso 5")
-			end
-		end
-		return
-	end
-
-	-- Spin
-	if cmd == "/spin" then
-		local success, err = pcall(function()
-			ReplicatedStorage.Remotes.CommF_:InvokeServer("Cousin", "Buy", "DLCBoxData")
-		end)
-		if success then
-			print("Successfully requested spin: Cousin / Buy / DLCBoxData")
-		else
-			warn("Failed to invoke server: " .. tostring(err))
-		end
-		return
-	end
-
-	-- Title
-	if cmd == "/title" then
-		local titleName = message:sub(#args[1] + 2):match("^%s*(.-)%s*$")
-		if titleName and titleName ~= "" then
-			local success, err = pcall(function()
-				ReplicatedStorage.Remotes.CommF_:InvokeServer("activateTitle", titleName)
-			end)
-			if success then
-				print("Successfully requested title change to: " .. titleName)
-			else
-				warn("Failed to change title: " .. tostring(err))
-			end
-		else
-			print("Usage: /title [TitleName]")
-		end
-		return
-	end
-
-	-- Raid (with auto-correction and pcall protection)
-	if cmd == "/raid" then
-		if value then
-			local raidName = matchRaidName(value)
-			if raidName then
-				print("Auto-corrected '" .. value .. "' to raid: " .. raidName)
-				local commF = getCommF()
-				if commF then
-					local success, err = pcall(function()
-						commF:InvokeServer("RaidsNpc", "Select", raidName)
-					end)
-					if success then
-						print("Raid selected: " .. raidName)
-					else
-						warn("Failed to select raid: " .. tostring(err))
-					end
-				else
-					warn("CommF_ remote not found!")
-				end
-			else
-				local valid = {}
-				for name, _ in pairs(validRaids) do table.insert(valid, name) end
-				print("Invalid raid name! No match for '" .. value .. "'. Valid raids: " .. table.concat(valid, ", "))
-			end
-		else
-			print("Usage: /raid [name] (auto-corrects partial names, e.g., /raid flame, /raid ic)")
-		end
-		return
-	end
-
-	-- Race reroll (renamed to /change)
-	if cmd == "/change" then
-		local success, err = pcall(function()
-			ReplicatedStorage.Remotes.CommF_:InvokeServer("BlackbeardReward", "Reroll", "2")
-		end)
-		if success then
-			print("Successfully requested race reroll!")
-		else
-			warn("Failed to invoke server: " .. tostring(err))
-		end
-		return
-	end
-
-	-- Race change (new /race command with race name argument)
-	if cmd == "/race" then
-		if value then
-			local matchedRace, raceNum = matchRaceName(value)
-			if matchedRace and raceNum then
-				print("Auto-corrected '" .. value .. "' to race: " .. matchedRace .. " (ID: " .. raceNum .. ")")
-				local success, err = pcall(function()
-					ReplicatedStorage.Remotes.CommF_:InvokeServer("Ectoplasm", "Change", raceNum)
-				end)
-				if success then
-					print("Successfully changed race to: " .. matchedRace)
-				else
-					warn("Failed to invoke server: " .. tostring(err))
-				end
-			else
-				local available = {}
-				for name, _ in pairs(raceNames) do table.insert(available, name) end
-				print("Invalid race name! No match for '" .. value .. "'. Available races: " .. table.concat(available, ", "))
-			end
-		else
-			print("Usage: /race [RaceName] (e.g., /race Ghoul, /race Human, /race Cyborg)")
-		end
-		return
-	end
-
-	-- Awaken: toggle awakening for all moves (no fruit name needed)
-	if cmd == "/aw" then
-		print("Toggling awakening ON for all moves (Z, X, C, V, F)")
-		toggleAllAwakening()
-		return
-	end
-
-	-- Un-awaken: toggle awakening OFF for all moves (no fruit name needed)
-	if cmd == "/unaw" then
-		print("Toggling awakening OFF for all moves (Z, X, C, V, F)")
-		toggleAllAwakening()
-		return
-	end
-
-	if cmd == "/players" then
-		print("Players GUI command triggered.")
-		return
-	end
-
-	-- ========== NEW COMMANDS ==========
-
-	-- Visual: Set time of day (0-24)
-	if cmd == "/time" then
-		if value and tonumber(value) then
-			Lighting.ClockTime = tonumber(value)
-			print("Time set to:", value)
-		end
-		return
-	end
-
-	-- Visual: Set brightness (0-2)
-	if cmd == "/bright" then
-		if value and tonumber(value) then
-			Lighting.Brightness = tonumber(value)
-			print("Brightness set to:", value)
-		end
-		return
-	end
-
-	-- Visual: Set fog density via Atmosphere
-	if cmd == "/fog" then
-		if value and tonumber(value) then
-			local density = tonumber(value)
-			local atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
-			if not atmosphere then
-				atmosphere = Instance.new("Atmosphere")
-				atmosphere.Parent = Lighting
-			end
-			atmosphere.Density = density
-			print("Fog density set to:", density)
-		end
-		return
-	end
-
-	-- Visual: Set camera FOV
-	if cmd == "/fov" then
-		if value and tonumber(value) then
-			local fov = math.clamp(tonumber(value), 1, 120)
-			workspace.CurrentCamera.FieldOfView = fov
-			print("FOV set to:", fov)
-		end
-		return
-	end
-
-	-- Visual: Reset lighting to default
-	if cmd == "/resetlight" then
-		Lighting.Ambient = Color3.fromRGB(128, 128, 128)
-		Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
-		Lighting.Brightness = 1
-		Lighting.ClockTime = 14
-		Lighting.GlobalShadows = true
-		for _, child in ipairs(Lighting:GetChildren()) do
-			if child:IsA("PostEffect") or child:IsA("Atmosphere") then
-				child:Destroy()
-			end
-		end
-		print("Lighting reset to default.")
-		return
-	end
-
-	-- Teleport to coordinates: /tp x y z (or tp to player: /tp playername)
-	if cmd == "/tp" then
-		local x = tonumber(args[2])
-		local y = tonumber(args[3])
-		local z = tonumber(args[4])
-		if x and y and z then
-			local char = player.Character
-			local root = char and char:FindFirstChild("HumanoidRootPart")
-			if root then
-				root.CFrame = CFrame.new(x, y, z)
-				print("Teleported to:", x, y, z)
-			end
-		elseif value then
-			gotoPlayerPartial(value)
-		end
-		return
-	end
-
-	-- Fly toggle (WASD + Space/Shift)
-	if cmd == "/fly" then
-		toggleFly()
-		return
-	end
-
-	-- Set fly speed
-	if cmd == "/flyspeed" then
-		if value and tonumber(value) then
-			flySpeed = tonumber(value)
-			print("Fly speed set to:", flySpeed)
-		end
-		return
-	end
-
-	-- Infinite jump toggle
-	if cmd == "/infjump" then
-		toggleInfJump()
-		return
-	end
-
-	-- Set workspace gravity
-	if cmd == "/gravity" then
-		if value and tonumber(value) then
-			workspace.Gravity = tonumber(value)
-			print("Gravity set to:", value)
-		end
-		return
-	end
-
-	-- Set jump power
-	if cmd == "/jumppower" then
-		if value and tonumber(value) then
-			local char = player.Character
-			if char then
-				local humanoid = char:FindFirstChildOfClass("Humanoid")
-				if humanoid then
-					humanoid.UseJumpPower = true
-					humanoid.JumpPower = tonumber(value)
-					print("Jump power set to:", value)
-				end
-			end
-		end
-		return
-	end
-
-	-- Set walkspeed directly
-	if cmd == "/ws" then
-		if value and tonumber(value) then
-			local char = player.Character
-			if char then
-				local humanoid = char:FindFirstChildOfClass("Humanoid")
-				if humanoid then
-					humanoid.WalkSpeed = tonumber(value)
-					print("WalkSpeed set to:", value)
-				end
-			end
-		end
-		return
-	end
-
-	-- God mode toggle
-	if cmd == "/god" then
-		toggleGodMode()
-		return
-	end
-
-	-- Noclip toggle
-	if cmd == "/noclip" then
-		toggleNoclip()
-		return
-	end
-
-	-- Invisible toggle
-	if cmd == "/invisible" or cmd == "/invis" then
-		toggleInvisible()
-		return
-	end
-
-	-- Rejoin server
-	if cmd == "/rejoin" then
-		rejoinServer()
-		return
-	end
-
-	-- Heal to full
-	if cmd == "/heal" then
-		healPlayer()
-		return
-	end
-
-	if not value then return end
-
-	for _, obj in ipairs(findAllByName(value)) do
-		if cmd == "/size" then
-			resizeHead(obj)
-		elseif cmd == "/restore" then
-			restoreHead(obj)
-		elseif cmd == "/k" then
-			killObj(obj)
-		end
-	end
 end
 
-player.Chatted:Connect(processCommand)
+
