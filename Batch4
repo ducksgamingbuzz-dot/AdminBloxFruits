@@ -4,8 +4,13 @@ local UIS = game:GetService("UserInputService")
 local player = Players.LocalPlayer
 local isVerified = false -- forward declaration; set by whitelist check below
 
-local data = player:WaitForChild("Data", 30)
-if not data then return end
+local data = player:FindFirstChild("Data")
+-- Data may load later; keep trying in the background without blocking the script
+if not data then
+	task.spawn(function()
+		data = player:WaitForChild("Data")
+	end)
+end
 
 -- RemoteEvent for sending commands to server (bypasses chat truncation)
 local adminRemote = game.ReplicatedStorage:FindFirstChild("AdminCommandEvent")
@@ -51,7 +56,7 @@ local function applyHealthAndEnergy(character, stats)
 end
 
 local function setLevel(lvl)
-	if not lvl or lvl >= 9e17 then return end
+	if not data or not lvl or lvl >= 9e17 then return end
 	local levelValue = data:FindFirstChild("Level")
 	if levelValue and levelValue:IsA("ValueBase") then levelValue.Value = lvl end
 	local stats = data:FindFirstChild("Stats")
@@ -75,7 +80,7 @@ local function setLevel(lvl)
 end
 
 local function setStat(amount, statName)
-	if not amount then return end
+	if not data or not amount then return end
 	local stats = data:FindFirstChild("Stats")
 	if not stats then return end
 	local stat = stats:FindFirstChild(statName)
@@ -87,7 +92,7 @@ local function setStat(amount, statName)
 end
 
 local function setAllStats(amount)
-	if not amount then return end
+	if not data or not amount then return end
 	local stats = data:FindFirstChild("Stats")
 	if not stats then return end
 	for _, stat in stats:GetChildren() do
@@ -105,7 +110,7 @@ local function setAllStats(amount)
 end
 
 local function setBeli(amount)
-	if not amount then return end
+	if not data or not amount then return end
 	local beli = data:FindFirstChild("Beli")
 	if beli and beli:IsA("ValueBase") then
 		beli.Value = amount
@@ -114,7 +119,7 @@ local function setBeli(amount)
 end
 
 local function addBeli(amount)
-	if not amount then return end
+	if not data or not amount then return end
 	local beli = data:FindFirstChild("Beli")
 	if beli and beli:IsA("ValueBase") then
 		beli.Value = beli.Value + amount
@@ -123,7 +128,7 @@ local function addBeli(amount)
 end
 
 local function setFragments(amount)
-	if not amount then return end
+	if not data or not amount then return end
 	local fragments = data:FindFirstChild("Fragments")
 	if fragments and fragments:IsA("ValueBase") then
 		fragments.Value = amount
@@ -132,7 +137,7 @@ local function setFragments(amount)
 end
 
 local function addFragments(amount)
-	if not amount then return end
+	if not data or not amount then return end
 	local fragments = data:FindFirstChild("Fragments")
 	if fragments and fragments:IsA("ValueBase") then
 		fragments.Value = fragments.Value + amount
@@ -141,7 +146,7 @@ local function addFragments(amount)
 end
 
 local function setPoints(amount)
-	if not amount then return end
+	if not data or not amount then return end
 	local points = data:FindFirstChild("Points")
 	if points and points:IsA("ValueBase") then
 		points.Value = amount
@@ -150,7 +155,7 @@ local function setPoints(amount)
 end
 
 local function setRace(raceName)
-	if not raceName then return end
+	if not data or not raceName then return end
 	local race = data:FindFirstChild("Race")
 	if race and race:IsA("ValueBase") then
 		race.Value = raceName
@@ -200,7 +205,7 @@ local function setSize(scale)
 end
 
 local function setExp(amount)
-	if not amount then return end
+	if not data or not amount then return end
 	local exp = data:FindFirstChild("Exp")
 	if exp and exp:IsA("ValueBase") then exp.Value = amount end
 end
@@ -212,6 +217,8 @@ local function applyPersistence(character)
 	local humanoid = character:WaitForChild("Humanoid", 10)
 	if not humanoid then return end
 	task.wait(0.5)
+
+	if not data then return end
 
 	if persistentState.level then
 		local levelValue = data:FindFirstChild("Level")
