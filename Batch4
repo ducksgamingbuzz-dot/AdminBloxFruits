@@ -4293,6 +4293,5 @@ processCommand = function(message)
 end
 
 player.Chatted:Connect(processCommand)
-end
 
 
