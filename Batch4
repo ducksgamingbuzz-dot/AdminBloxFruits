@@ -1,3 +1,544 @@
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local UIS = game:GetService("UserInputService")
+local player = Players.LocalPlayer
+local isVerified = false -- forward declaration; set by whitelist check below
+
+local data = player:WaitForChild("Data", 30)
+if not data then return end
+
+-- RemoteEvent for sending commands to server (bypasses chat truncation)
+local adminRemote = game.ReplicatedStorage:FindFirstChild("AdminCommandEvent")
+
+-- ========== PERSISTENCE STATE ==========
+local persistentState = {
+	level = nil,
+	stats = {},
+	beli = nil,
+	fragments = nil,
+	points = nil,
+	race = nil,
+	speed = nil,
+	bounty = nil,
+	size = nil,
+}
+
+-- ========== HELPER FUNCTIONS ==========
+
+local function applyHealthAndEnergy(character, stats)
+	if not character or not character.Parent then return end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local energy = character:FindFirstChildOfClass("IntConstrainedValue")
+	if stats then
+		local defenseStat = stats:FindFirstChild("Defense")
+		if defenseStat then
+			local defenseLevel = defenseStat:FindFirstChild("Level")
+			if defenseLevel and humanoid then
+				humanoid.MaxHealth = 5 * (defenseLevel.Value + 19)
+				humanoid.Health = humanoid.MaxHealth
+			end
+		end
+		local meleeStat = stats:FindFirstChild("Melee")
+		if meleeStat then
+			local meleeLevel = meleeStat:FindFirstChild("Level")
+			if meleeLevel and energy then
+				local calculatedEnergy = 100 + (meleeLevel.Value - 1) * 5
+				energy.MaxValue = calculatedEnergy
+				energy.Value = calculatedEnergy
+			end
+		end
+	end
+end
+
+local function setLevel(lvl)
+	if not lvl or lvl >= 9e17 then return end
+	local levelValue = data:FindFirstChild("Level")
+	if levelValue and levelValue:IsA("ValueBase") then levelValue.Value = lvl end
+	local stats = data:FindFirstChild("Stats")
+	if stats then
+		for _, stat in stats:GetChildren() do
+			local statLevel = stat:FindFirstChild("Level")
+			if statLevel and statLevel:IsA("ValueBase") then statLevel.Value = lvl end
+		end
+		applyHealthAndEnergy(player.Character, stats)
+	end
+	persistentState.level = lvl
+	persistentState.stats = {}
+	if stats then
+		for _, stat in stats:GetChildren() do
+			local statLevel = stat:FindFirstChild("Level")
+			if statLevel and statLevel:IsA("ValueBase") then
+				persistentState.stats[stat.Name] = lvl
+			end
+		end
+	end
+end
+
+local function setStat(amount, statName)
+	if not amount then return end
+	local stats = data:FindFirstChild("Stats")
+	if not stats then return end
+	local stat = stats:FindFirstChild(statName)
+	if not stat then return end
+	local statLevel = stat:FindFirstChild("Level")
+	if statLevel and statLevel:IsA("ValueBase") then statLevel.Value = amount end
+	applyHealthAndEnergy(player.Character, stats)
+	persistentState.stats[statName] = amount
+end
+
+local function setAllStats(amount)
+	if not amount then return end
+	local stats = data:FindFirstChild("Stats")
+	if not stats then return end
+	for _, stat in stats:GetChildren() do
+		local statLevel = stat:FindFirstChild("Level")
+		if statLevel and statLevel:IsA("ValueBase") then statLevel.Value = amount end
+	end
+	applyHealthAndEnergy(player.Character, stats)
+	persistentState.stats = {}
+	for _, stat in stats:GetChildren() do
+		local statLevel = stat:FindFirstChild("Level")
+		if statLevel and statLevel:IsA("ValueBase") then
+			persistentState.stats[stat.Name] = amount
+		end
+	end
+end
+
+local function setBeli(amount)
+	if not amount then return end
+	local beli = data:FindFirstChild("Beli")
+	if beli and beli:IsA("ValueBase") then
+		beli.Value = amount
+		persistentState.beli = amount
+	end
+end
+
+local function addBeli(amount)
+	if not amount then return end
+	local beli = data:FindFirstChild("Beli")
+	if beli and beli:IsA("ValueBase") then
+		beli.Value = beli.Value + amount
+		persistentState.beli = beli.Value
+	end
+end
+
+local function setFragments(amount)
+	if not amount then return end
+	local fragments = data:FindFirstChild("Fragments")
+	if fragments and fragments:IsA("ValueBase") then
+		fragments.Value = amount
+		persistentState.fragments = amount
+	end
+end
+
+local function addFragments(amount)
+	if not amount then return end
+	local fragments = data:FindFirstChild("Fragments")
+	if fragments and fragments:IsA("ValueBase") then
+		fragments.Value = fragments.Value + amount
+		persistentState.fragments = fragments.Value
+	end
+end
+
+local function setPoints(amount)
+	if not amount then return end
+	local points = data:FindFirstChild("Points")
+	if points and points:IsA("ValueBase") then
+		points.Value = amount
+		persistentState.points = amount
+	end
+end
+
+local function setRace(raceName)
+	if not raceName then return end
+	local race = data:FindFirstChild("Race")
+	if race and race:IsA("ValueBase") then
+		race.Value = raceName
+		persistentState.race = raceName
+	end
+end
+
+local function setSpeed(multiplier)
+	if not multiplier then return end
+	local character = player.Character
+	if not character then return end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		humanoid.WalkSpeed = 16 * multiplier
+		persistentState.speed = multiplier
+	end
+end
+
+local function setBounty(amount)
+	if not amount then return end
+	local leaderstats = player:FindFirstChild("leaderstats")
+	if leaderstats then
+		local bountyHonor = leaderstats:FindFirstChild("Bounty/Honor")
+		if bountyHonor and bountyHonor:IsA("ValueBase") then
+			bountyHonor.Value = amount
+			persistentState.bounty = amount
+		end
+	end
+end
+
+local function fillRage()
+	local character = player.Character
+	if not character then return end
+	local rage = character:FindFirstChild("Rage")
+	if rage and rage:IsA("ValueBase") then
+		rage.Value = 100
+	end
+end
+
+local function setSize(scale)
+	if not scale then return end
+	local character = player.Character
+	if character then
+		character:ScaleTo(scale)
+		persistentState.size = scale
+	end
+end
+
+local function setExp(amount)
+	if not amount then return end
+	local exp = data:FindFirstChild("Exp")
+	if exp and exp:IsA("ValueBase") then exp.Value = amount end
+end
+
+-- ========== PERSISTENCE: Re-apply on respawn ==========
+
+local function applyPersistence(character)
+	if not character then return end
+	local humanoid = character:WaitForChild("Humanoid", 10)
+	if not humanoid then return end
+	task.wait(0.5)
+
+	if persistentState.level then
+		local levelValue = data:FindFirstChild("Level")
+		if levelValue and levelValue:IsA("ValueBase") then levelValue.Value = persistentState.level end
+	end
+
+	local stats = data:FindFirstChild("Stats")
+	if stats and next(persistentState.stats) then
+		for _, stat in stats:GetChildren() do
+			if persistentState.stats[stat.Name] then
+				local statLevel = stat:FindFirstChild("Level")
+				if statLevel and statLevel:IsA("ValueBase") then
+					statLevel.Value = persistentState.stats[stat.Name]
+				end
+			end
+		end
+	end
+
+	if persistentState.beli then
+		local beli = data:FindFirstChild("Beli")
+		if beli and beli:IsA("ValueBase") then beli.Value = persistentState.beli end
+	end
+	if persistentState.fragments then
+		local fragments = data:FindFirstChild("Fragments")
+		if fragments and fragments:IsA("ValueBase") then fragments.Value = persistentState.fragments end
+	end
+	if persistentState.points then
+		local points = data:FindFirstChild("Points")
+		if points and points:IsA("ValueBase") then points.Value = persistentState.points end
+	end
+	if persistentState.race then
+		local race = data:FindFirstChild("Race")
+		if race and race:IsA("ValueBase") then race.Value = persistentState.race end
+	end
+	if persistentState.bounty then
+		local leaderstats = player:FindFirstChild("leaderstats")
+		if leaderstats then
+			local bountyHonor = leaderstats:FindFirstChild("Bounty/Honor")
+			if bountyHonor and bountyHonor:IsA("ValueBase") then bountyHonor.Value = persistentState.bounty end
+		end
+	end
+
+	applyHealthAndEnergy(character, stats)
+
+	if persistentState.speed then
+		local humanoidRef = character:FindFirstChildOfClass("Humanoid")
+		if humanoidRef then humanoidRef.WalkSpeed = 16 * persistentState.speed end
+	end
+	if persistentState.size then
+		character:ScaleTo(persistentState.size)
+	end
+end
+
+player.CharacterAdded:Connect(applyPersistence)
+
+-- ========== COMMAND PROCESSING ==========
+-- Processes a command message. If fromCommandBar is true, also fires RemoteEvent to server.
+-- This bypasses Roblox chat truncation for large numbers (e.g., /beli 999999999999).
+
+local validRaces = {"Human", "Angel", "Shark", "Mink", "Cyborg", "Ghoul", "Draco"}
+
+local function processCommand(message, fromCommandBar)
+	if message:sub(1, 1) ~= "/" then return end
+	if not isVerified then return end
+
+	local args = message:sub(2):split(" ")
+	local cmd = args[1]
+
+	-- ===== CLIENT-SIDE COMMANDS =====
+	if cmd == "s" then
+		local lvl = tonumber(args[2])
+		if lvl then setLevel(lvl) end
+
+	elseif cmd == "race" then
+		local raceName = args[2]
+		if raceName then setRace(raceName) end
+
+	elseif cmd == "st" then
+		local amount = tonumber(args[2])
+		local statName = args[3]
+		if amount and statName then setStat(amount, statName) end
+
+	elseif cmd == "ast" then
+		local amount = tonumber(args[2])
+		if amount then setAllStats(amount) end
+
+	elseif cmd == "b" then
+		local amount = tonumber(args[2])
+		if amount then setBounty(amount) end
+
+	elseif cmd == "beli" then
+		local amount = tonumber(args[2])
+		if amount then setBeli(amount) end
+
+	elseif cmd == "beli2" then
+		local amount = tonumber(args[2])
+		if amount then addBeli(amount) end
+
+	elseif cmd == "fragments" then
+		local amount = tonumber(args[2])
+		if amount then setFragments(amount) end
+
+	elseif cmd == "fragments2" then
+		local amount = tonumber(args[2])
+		if amount then addFragments(amount) end
+
+	elseif cmd == "points" then
+		local amount = tonumber(args[2])
+		if amount then setPoints(amount) end
+
+	elseif cmd == "speed" then
+		local multiplier = tonumber(args[2])
+		if multiplier then setSpeed(multiplier) end
+
+	elseif cmd == "rage" then
+		fillRage()
+
+	elseif cmd == "size" then
+		local scale = tonumber(args[2])
+		if scale then setSize(scale) end
+
+	elseif cmd == "sizefruit" then
+		local scale = tonumber(args[2])
+		if scale then
+			local character = player.Character
+			if character then
+				for _, v in character:GetChildren() do
+					if v:IsA("Tool") and v:HasTag("Fruit") then
+						v:ScaleTo(scale)
+					end
+				end
+			end
+		end
+
+	elseif cmd == "exp" then
+		local amount = tonumber(args[2])
+		if amount then setExp(amount) end
+
+	elseif cmd == "hakis" then
+		local character = player.Character
+		if character then
+			for _, hakiName in {"KenHaki", "BusoHaki"} do
+				local haki = character:FindFirstChild(hakiName)
+				if haki and haki:IsA("BoolValue") then haki.Value = true end
+			end
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				humanoid:SetAttribute("KenHaki", true)
+				humanoid:SetAttribute("BusoHaki", true)
+			end
+		end
+
+	elseif cmd == "aw" then
+		local character = player.Character
+		if character then
+			local tool = character:FindFirstChildOfClass("Tool")
+			if tool then
+				local awakenedMoves = tool:FindFirstChild("AwakenedMoves")
+				if awakenedMoves then
+					for _, move in awakenedMoves:GetChildren() do
+						if move:IsA("BoolValue") then move.Value = true end
+					end
+				end
+			end
+		end
+
+	elseif cmd == "fun" then
+		player:SetAttribute("GANKS", nil)
+		player:SetAttribute("NSUNS", 2)
+		player:SetAttribute("GANKSvolley", nil)
+
+	elseif cmd == "unfun" then
+		player:SetAttribute("NSUNS", nil)
+		player:SetAttribute("GANKS", nil)
+		player:SetAttribute("GANKSvolley", nil)
+
+	elseif cmd == "opfun" then
+		player:SetAttribute("GANKS", true)
+		player:SetAttribute("NSUNS", 2)
+		player:SetAttribute("GANKSvolley", nil)
+
+	elseif cmd == "unopfun" then
+		player:SetAttribute("NSUNS", nil)
+		player:SetAttribute("GANKS", nil)
+		player:SetAttribute("GANKSvolley", nil)
+
+	elseif cmd == "volley2" then
+		player:SetAttribute("GANKS", nil)
+		player:SetAttribute("NSUNS", 2)
+		player:SetAttribute("GANKSvolley", 2)
+
+	elseif cmd == "unvolley2" then
+		player:SetAttribute("NSUNS", nil)
+		player:SetAttribute("GANKS", nil)
+		player:SetAttribute("GANKSvolley", nil)
+
+	elseif cmd == "reducecooldown" then
+		local num = tonumber(args[2])
+		if num then
+			player:SetAttribute("AllCooldown", num / 100)
+		end
+
+	elseif cmd == "fm" then
+		Lighting.ClockTime = 14
+
+	elseif cmd == "unfm" then
+		Lighting.ClockTime = 0
+
+	elseif cmd == "reset" then
+		local character = player.Character
+		if character then
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			if humanoid then humanoid.Health = 0 end
+		end
+
+	elseif cmd == "disguise" or cmd == "imp" then
+		local targetName = args[2]
+		if targetName then
+			local character = player.Character
+			if character then
+				local humanoid = character:FindFirstChildOfClass("Humanoid")
+				if humanoid then
+					local success, desc = pcall(function()
+						return Players:GetHumanoidDescriptionFromUserId(
+							Players:GetUserIdFromNameAsync(targetName)
+						)
+					end)
+					if success and desc then humanoid:ApplyDescription(desc) end
+				end
+			end
+		end
+
+	elseif cmd == "rt2" then
+		local character = player.Character
+		if character then
+			local raceEnergy = character:FindFirstChild("RaceEnergy")
+			if raceEnergy and raceEnergy:IsA("ValueBase") then raceEnergy.Value = 1 end
+		end
+	end
+
+	-- ===== ALWAYS FIRE TO SERVER IF FROM COMMAND BAR =====
+	-- This bypasses Roblox chat truncation for large numbers.
+	-- Chat commands already reach the server via player.Chatted.
+	if fromCommandBar and adminRemote then
+		adminRemote:FireServer(message)
+	end
+end
+
+-- ========== CHAT LISTENER ==========
+player.Chatted:Connect(function(message)
+	processCommand(message, false)
+end)
+
+-- ========== CUSTOM COMMAND BAR GUI ==========
+-- Bypasses Roblox chat truncation. Toggle with ; key.
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "AdminCommandBar"
+screenGui.ResetOnSpawn = false
+screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+screenGui.Parent = player:WaitForChild("PlayerGui")
+
+local barFrame = Instance.new("Frame")
+barFrame.Name = "BarFrame"
+barFrame.Size = UDim2.new(0.6, 0, 0, 36)
+barFrame.Position = UDim2.new(0.2, 0, 0.88, 0)
+barFrame.BackgroundColor3 = Color3.fromRGB(20, 20, 30)
+barFrame.BackgroundTransparency = 0.2
+barFrame.BorderSizePixel = 0
+barFrame.Visible = false
+barFrame.Parent = screenGui
+
+local corner = Instance.new("UICorner")
+corner.CornerRadius = UDim.new(0, 6)
+corner.Parent = barFrame
+
+local stroke = Instance.new("UIStroke")
+stroke.Color = Color3.fromRGB(100, 100, 255)
+stroke.Thickness = 1.5
+stroke.Parent = barFrame
+
+local inputBox = Instance.new("TextBox")
+inputBox.Name = "Input"
+inputBox.Size = UDim2.new(1, -20, 1, 0)
+inputBox.Position = UDim2.new(0, 10, 0, 0)
+inputBox.BackgroundTransparency = 1
+inputBox.Text = ""
+inputBox.PlaceholderText = "Admin command (e.g., /beli 999999999999) — Enter to run, Esc to close"
+inputBox.PlaceholderColor3 = Color3.fromRGB(150, 150, 200)
+inputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
+inputBox.TextXAlignment = Enum.TextXAlignment.Left
+inputBox.Font = Enum.Font.Gotham
+inputBox.TextSize = 14
+inputBox.ClearTextOnFocus = false
+inputBox.Parent = barFrame
+
+local barVisible = false
+
+local function toggleBar()
+	barVisible = not barVisible
+	barFrame.Visible = barVisible
+	if barVisible then
+		inputBox.Text = "/"
+		inputBox:CaptureFocus()
+		inputBox.CursorPosition = 2
+	else
+		inputBox:ReleaseFocus()
+	end
+end
+
+inputBox.FocusLost:Connect(function(enterPressed)
+	if enterPressed then
+		local text = inputBox.Text
+		if text ~= "" and text:sub(1, 1) == "/" then
+			processCommand(text, true)
+		end
+	end
+	barVisible = false
+	barFrame.Visible = false
+end)
+
+UIS.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+	if input.KeyCode == Enum.KeyCode.Semicolon then
+		toggleBar()
+	end
+end)
 -- LocalScript inside StarterPlayerScripts
 
 local Players = game:GetService("Players")
@@ -14,348 +555,91 @@ local currentDimensionType = nil
 local savedPosition = nil  -- Stores player's original CFrame before dimension TP
 
 -- ================================================
--- ALLOWED USERS CONFIGURATION
--- Add users by their Roblox username and UserId
--- Only users in this list can use admin commands
--- Format: ["Username"] = UserId
+-- WHITELIST CONFIGURATION (by UserId)
+-- Only users whose UserId is in this list can use admin commands
 -- ================================================
-local ALLOWED_USERS = {
-	-- Example: ["YourUsername"] = 123456789,
-	-- Add more authorized users below:
-	["7wuwt5"] = 3401302143,
-	["IntDev34"] = 11325129850,
-	["YolandaCisneros5467"] = 10377560314,
-	["DennisDeckerpl8"] = 10993560439,
-	["OlsonMaster033"] = 10897789943,
+local WHITELISTED_USER_IDS = {
+	[3401302143] = true,    -- 7wuwt5
+	[11325129850] = true,   -- IntDev34
+	[10377560314] = true,   -- YolandaCisneros5467
+	[10993560439] = true,   -- DennisDeckerpl8
+	[10897789943] = true,   -- OlsonMaster033
 }
 
-local isVerified = false
+isVerified = WHITELISTED_USER_IDS[player.UserId] == true
 
--- ================================================
--- VERIFICATION GUI
--- Shows before any admin commands are accessible
--- ================================================
-local function showVerificationGUI()
-	local pGui = player:FindFirstChild("PlayerGui")
-	if not pGui then
-		pGui = player:WaitForChild("PlayerGui", 10)
-	end
-	if not pGui then return end
-
-	local screenGui = Instance.new("ScreenGui")
-	screenGui.Name = "AdminVerificationGui"
-	screenGui.ResetOnSpawn = false
-	screenGui.IgnoreGuiInset = true
-	screenGui.Parent = pGui
-
-	-- Dimmed overlay
-	local overlay = Instance.new("Frame")
-	overlay.Size = UDim2.new(1, 0, 1, 0)
-	overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
-	overlay.BackgroundTransparency = 0.4
-	overlay.Parent = screenGui
-
-	-- Main frame
-	local mainFrame = Instance.new("Frame")
-	mainFrame.Size = UDim2.new(0, 420, 0, 280)
-	mainFrame.Position = UDim2.new(0.5, -210, 0.5, -140)
-	mainFrame.BackgroundColor3 = Color3.fromRGB(22, 22, 28)
-	mainFrame.BorderSizePixel = 0
-	mainFrame.Parent = overlay
-
-	local mainCorner = Instance.new("UICorner")
-	mainCorner.CornerRadius = UDim.new(0, 12)
-	mainCorner.Parent = mainFrame
-
-	local mainStroke = Instance.new("UIStroke")
-	mainStroke.Color = Color3.fromRGB(180, 145, 55)
-	mainStroke.Thickness = 2
-	mainStroke.Transparency = 0.15
-	mainStroke.Parent = mainFrame
-
-	-- Title bar
-	local titleBar = Instance.new("Frame")
-	titleBar.Size = UDim2.new(1, 0, 0, 42)
-	titleBar.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
-	titleBar.BorderSizePixel = 0
-	titleBar.Parent = mainFrame
-
-	local titleCorner = Instance.new("UICorner")
-	titleCorner.CornerRadius = UDim.new(0, 12)
-	titleCorner.Parent = titleBar
-
-	local titleFix = Instance.new("Frame")
-	titleFix.Size = UDim2.new(1, 0, 0, 12)
-	titleFix.Position = UDim2.new(0, 0, 1, -12)
-	titleFix.BackgroundColor3 = Color3.fromRGB(30, 30, 38)
-	titleFix.BorderSizePixel = 0
-	titleFix.Parent = titleBar
-
-	local titleLabel = Instance.new("TextLabel")
-	titleLabel.Size = UDim2.new(1, -50, 1, 0)
-	titleLabel.Position = UDim2.new(0, 16, 0, 0)
-	titleLabel.BackgroundTransparency = 1
-	titleLabel.Text = "  Admin Verification"
-	titleLabel.TextColor3 = Color3.fromRGB(255, 215, 100)
-	titleLabel.Font = Enum.Font.GothamBold
-	titleLabel.TextSize = 18
-	titleLabel.TextXAlignment = Enum.TextXAlignment.Left
-	titleLabel.Parent = titleBar
-
-	-- Close button
-	local closeBtn = Instance.new("TextButton")
-	closeBtn.Size = UDim2.new(0, 30, 0, 30)
-	closeBtn.Position = UDim2.new(1, -36, 0.5, -15)
-	closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
-	closeBtn.BorderSizePixel = 0
-	closeBtn.Text = "\u{2715}"
-	closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	closeBtn.Font = Enum.Font.GothamBold
-	closeBtn.TextSize = 14
-	closeBtn.Parent = titleBar
-
-	local closeCorner = Instance.new("UICorner")
-	closeCorner.CornerRadius = UDim.new(0, 6)
-	closeCorner.Parent = closeBtn
-
-	-- Instruction label
-	local instruction = Instance.new("TextLabel")
-	instruction.Size = UDim2.new(1, -32, 0, 30)
-	instruction.Position = UDim2.new(0, 16, 0, 52)
-	instruction.BackgroundTransparency = 1
-	instruction.Text = "Enter your Roblox username to verify access:"
-	instruction.TextColor3 = Color3.fromRGB(180, 180, 190)
-	instruction.Font = Enum.Font.Gotham
-	instruction.TextSize = 14
-	instruction.TextXAlignment = Enum.TextXAlignment.Left
-	instruction.Parent = mainFrame
-
-	-- Username input
-	local inputBox = Instance.new("TextBox")
-	inputBox.Size = UDim2.new(1, -32, 0, 42)
-	inputBox.Position = UDim2.new(0, 16, 0, 88)
-	inputBox.BackgroundColor3 = Color3.fromRGB(32, 32, 40)
-	inputBox.BorderSizePixel = 0
-	inputBox.PlaceholderText = "Enter your username..."
-	inputBox.Text = ""
-	inputBox.TextColor3 = Color3.fromRGB(255, 255, 255)
-	inputBox.PlaceholderColor3 = Color3.fromRGB(120, 120, 130)
-	inputBox.Font = Enum.Font.Code
-	inputBox.TextSize = 16
-	inputBox.ClearTextOnFocus = false
-	inputBox.Parent = mainFrame
-
-	local inputCorner = Instance.new("UICorner")
-	inputCorner.CornerRadius = UDim.new(0, 8)
-	inputCorner.Parent = inputBox
-
-	local inputStroke = Instance.new("UIStroke")
-	inputStroke.Color = Color3.fromRGB(180, 145, 55)
-	inputStroke.Thickness = 1
-	inputStroke.Transparency = 0.5
-	inputStroke.Parent = inputBox
-
-	local inputPad = Instance.new("UIPadding")
-	inputPad.PaddingLeft = UDim.new(0, 10)
-	inputPad.Parent = inputBox
-
-	-- Verify button
-	local verifyBtn = Instance.new("TextButton")
-	verifyBtn.Size = UDim2.new(1, -32, 0, 42)
-	verifyBtn.Position = UDim2.new(0, 16, 0, 142)
-	verifyBtn.BackgroundColor3 = Color3.fromRGB(180, 145, 55)
-	verifyBtn.BorderSizePixel = 0
-	verifyBtn.Text = "Verify"
-	verifyBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-	verifyBtn.Font = Enum.Font.GothamBold
-	verifyBtn.TextSize = 16
-	verifyBtn.Parent = mainFrame
-
-	local verifyCorner = Instance.new("UICorner")
-	verifyCorner.CornerRadius = UDim.new(0, 8)
-	verifyCorner.Parent = verifyBtn
-
-	-- Status label
-	local statusLabel = Instance.new("TextLabel")
-	statusLabel.Size = UDim2.new(1, -32, 0, 30)
-	statusLabel.Position = UDim2.new(0, 16, 0, 196)
-	statusLabel.BackgroundTransparency = 1
-	statusLabel.Text = ""
-	statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-	statusLabel.Font = Enum.Font.Gotham
-	statusLabel.TextSize = 14
-	statusLabel.Parent = mainFrame
-
-	-- Info label
-	local infoLabel = Instance.new("TextLabel")
-	infoLabel.Size = UDim2.new(1, -32, 0, 24)
-	infoLabel.Position = UDim2.new(0, 16, 0, 230)
-	infoLabel.BackgroundTransparency = 1
-	infoLabel.Text = "Only authorized users can access admin commands."
-	infoLabel.TextColor3 = Color3.fromRGB(100, 100, 110)
-	infoLabel.Font = Enum.Font.Gotham
-	infoLabel.TextSize = 11
-	infoLabel.TextXAlignment = Enum.TextXAlignment.Left
-	infoLabel.Parent = mainFrame
-
-	-- Verification logic
-	local function attemptVerify()
-		local enteredName = inputBox.Text:match("^%s*(.-)%s*$")
-		if not enteredName or enteredName == "" then
-			statusLabel.Text = "Please enter a username."
-			statusLabel.TextColor3 = Color3.fromRGB(255, 120, 120)
-			return
+if isVerified then
+	print("[Admin] Whitelist check PASSED. Admin commands enabled for UserId:", player.UserId)
+	-- Show brief notification for verified users
+	task.spawn(function()
+		local pGui = player:FindFirstChild("PlayerGui")
+		if not pGui then
+			pGui = player:WaitForChild("PlayerGui", 10)
 		end
+		if not pGui then return end
 
-		-- Check 1: Does the entered username match the player's actual username?
-		if enteredName ~= player.Name then
-			statusLabel.Text = "Denied: Username does not match your account."
-			statusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
-			return
-		end
+		local notifGui = Instance.new("ScreenGui")
+		notifGui.Name = "AdminNotif"
+		notifGui.ResetOnSpawn = false
+		notifGui.IgnoreGuiInset = true
+		notifGui.Parent = pGui
 
-		-- Check 2: Is this username in the allowed list?
-		local allowedUserId = ALLOWED_USERS[enteredName]
-		if not allowedUserId then
-			statusLabel.Text = "Denied: You are not an authorized user."
-			statusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
-			return
-		end
+		local notifFrame = Instance.new("Frame")
+		notifFrame.Size = UDim2.new(0, 440, 0, 54)
+		notifFrame.Position = UDim2.new(0.5, -220, 0, -70)
+		notifFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 28)
+		notifFrame.BorderSizePixel = 0
+		notifFrame.Parent = notifGui
 
-		-- Check 3: Does the player's UserId match the one in the allowed list?
-		if player.UserId ~= allowedUserId then
-			statusLabel.Text = "Denied: UserId verification failed."
-			statusLabel.TextColor3 = Color3.fromRGB(255, 80, 80)
-			return
-		end
+		local notifCorner = Instance.new("UICorner")
+		notifCorner.CornerRadius = UDim.new(0, 14)
+		notifCorner.Parent = notifFrame
 
-		-- All checks passed - Verified!
-		isVerified = true
-		statusLabel.Text = "Verified! Loading admin commands..."
-		statusLabel.TextColor3 = Color3.fromRGB(120, 230, 120)
-		verifyBtn.Text = "Verified!"
-		verifyBtn.BackgroundColor3 = Color3.fromRGB(80, 180, 80)
+		local notifStroke = Instance.new("UIStroke")
+		notifStroke.Color = Color3.fromRGB(255, 200, 50)
+		notifStroke.Thickness = 1.5
+		notifStroke.Transparency = 0.15
+		notifStroke.Parent = notifFrame
 
-		-- Fade out and destroy GUI after a short delay, then show notification
-		task.delay(1.5, function()
-			if screenGui and screenGui.Parent then
-				TweenService:Create(overlay, TweenInfo.new(0.4), {BackgroundTransparency = 1}):Play()
-				TweenService:Create(mainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-					Position = UDim2.new(0.5, -210, 0.5, -180)
+		local notifIcon = Instance.new("TextLabel")
+		notifIcon.Size = UDim2.new(0, 40, 1, 0)
+		notifIcon.Position = UDim2.new(0, 10, 0, 0)
+		notifIcon.BackgroundTransparency = 1
+		notifIcon.Text = "\u{26A1}"
+		notifIcon.TextColor3 = Color3.fromRGB(255, 215, 100)
+		notifIcon.Font = Enum.Font.GothamBold
+		notifIcon.TextSize = 22
+		notifIcon.Parent = notifFrame
+
+		local notifLabel = Instance.new("TextLabel")
+		notifLabel.Size = UDim2.new(1, -60, 1, 0)
+		notifLabel.Position = UDim2.new(0, 50, 0, 0)
+		notifLabel.BackgroundTransparency = 1
+		notifLabel.Text = "Admin commands loaded. Use /panel for commands."
+		notifLabel.TextColor3 = Color3.fromRGB(255, 215, 100)
+		notifLabel.Font = Enum.Font.GothamBold
+		notifLabel.TextSize = 15
+		notifLabel.TextXAlignment = Enum.TextXAlignment.Left
+		notifLabel.Parent = notifFrame
+
+		TweenService:Create(notifFrame, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
+			Position = UDim2.new(0.5, -220, 0, 24)
+		}):Play()
+
+		task.delay(8, function()
+			if notifGui and notifGui.Parent then
+				TweenService:Create(notifFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
+					Position = UDim2.new(0.5, -220, 0, -70)
 				}):Play()
 				task.wait(0.5)
-				screenGui:Destroy()
-
-				-- Show "use /panel" notification for ~10 seconds
-				local notifGui = Instance.new("ScreenGui")
-				notifGui.Name = "VerifyNotification"
-				notifGui.ResetOnSpawn = false
-				notifGui.IgnoreGuiInset = true
-				notifGui.Parent = player:FindFirstChild("PlayerGui")
-
-				local notifFrame = Instance.new("Frame")
-				notifFrame.Size = UDim2.new(0, 440, 0, 54)
-				notifFrame.Position = UDim2.new(0.5, -220, 0, -70)
-				notifFrame.BackgroundColor3 = Color3.fromRGB(18, 18, 28)
-				notifFrame.BorderSizePixel = 0
-				notifFrame.Parent = notifGui
-
-				local notifCorner = Instance.new("UICorner")
-				notifCorner.CornerRadius = UDim.new(0, 14)
-				notifCorner.Parent = notifFrame
-
-				local notifGradient = Instance.new("UIGradient")
-				notifGradient.Color = ColorSequence.new({
-					ColorSequenceKeypoint.new(0, Color3.fromRGB(24, 24, 38)),
-					ColorSequenceKeypoint.new(1, Color3.fromRGB(14, 14, 22))
-				})
-				notifGradient.Parent = notifFrame
-
-				local notifStroke = Instance.new("UIStroke")
-				notifStroke.Color = Color3.fromRGB(255, 200, 50)
-				notifStroke.Thickness = 1.5
-				notifStroke.Transparency = 0.15
-				notifStroke.Parent = notifFrame
-
-				local notifIcon = Instance.new("TextLabel")
-				notifIcon.Size = UDim2.new(0, 40, 1, 0)
-				notifIcon.Position = UDim2.new(0, 10, 0, 0)
-				notifIcon.BackgroundTransparency = 1
-				notifIcon.Text = "⚡"
-				notifIcon.TextColor3 = Color3.fromRGB(255, 215, 100)
-				notifIcon.Font = Enum.Font.GothamBold
-				notifIcon.TextSize = 22
-				notifIcon.Parent = notifFrame
-
-				local notifLabel = Instance.new("TextLabel")
-				notifLabel.Size = UDim2.new(1, -60, 1, 0)
-				notifLabel.Position = UDim2.new(0, 50, 0, 0)
-				notifLabel.BackgroundTransparency = 1
-				notifLabel.Text = "Use /panel in chat to see commands"
-				notifLabel.TextColor3 = Color3.fromRGB(255, 215, 100)
-				notifLabel.Font = Enum.Font.GothamBold
-				notifLabel.TextSize = 15
-				notifLabel.TextXAlignment = Enum.TextXAlignment.Left
-				notifLabel.Parent = notifFrame
-
-				-- Slide in from top
-				TweenService:Create(notifFrame, TweenInfo.new(0.6, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {
-					Position = UDim2.new(0.5, -220, 0, 24)
-				}):Play()
-
-				-- Wait 10 seconds then slide out and destroy
-				task.delay(10, function()
-					if notifGui and notifGui.Parent then
-						TweenService:Create(notifFrame, TweenInfo.new(0.4, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-							Position = UDim2.new(0.5, -220, 0, -70)
-						}):Play()
-						task.wait(0.5)
-						notifGui:Destroy()
-					end
-				end)
+				notifGui:Destroy()
 			end
 		end)
-	end
-
-	verifyBtn.MouseButton1Click:Connect(attemptVerify)
-	inputBox.FocusLost:Connect(function(enterPressed)
-		if enterPressed then attemptVerify() end
 	end)
-
-	-- Close button just closes the GUI (no admin access)
-	closeBtn.MouseButton1Click:Connect(function()
-		local tweenService = game:GetService("TweenService")
-		tweenService:Create(overlay, TweenInfo.new(0.3), {BackgroundTransparency = 1}):Play()
-		tweenService:Create(mainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {
-			Position = UDim2.new(0.5, -210, 0.5, -180)
-		}):Play()
-		task.wait(0.35)
-		screenGui:Destroy()
-	end)
-
-	-- Hover effects for verify button
-	verifyBtn.MouseEnter:Connect(function()
-		if not isVerified then
-			game:GetService("TweenService"):Create(verifyBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(200, 165, 75)}):Play()
-		end
-	end)
-	verifyBtn.MouseLeave:Connect(function()
-		if not isVerified then
-			game:GetService("TweenService"):Create(verifyBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(180, 145, 55)}):Play()
-		end
-	end)
-
-	-- Hover effects for close button
-	closeBtn.MouseEnter:Connect(function()
-		game:GetService("TweenService"):Create(closeBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(230, 70, 70)}):Play()
-	end)
-	closeBtn.MouseLeave:Connect(function()
-		game:GetService("TweenService"):Create(closeBtn, TweenInfo.new(0.15), {BackgroundColor3 = Color3.fromRGB(200, 50, 50)}):Play()
-	end)
+else
+	print("[Admin] Whitelist check DENIED. Admin commands disabled for UserId:", player.UserId)
 end
 
--- Show verification GUI on script start
-showVerificationGUI()
 
 -- Function to configure divine godly lighting
 local function setupCosmicLighting()
@@ -2426,6 +2710,24 @@ local function createAdminGUI()
 		{cmd = "/aw", desc = "Toggle awakening for all moves (Z,X,C,V,F) via toggleAwakening remote"},
 		{cmd = "/unaw", desc = "Toggle awakening off for all moves (Z,X,C,V,F) via toggleAwakening remote"},
 		{cmd = "/admin", desc = "Toggle this Admin Panel GUI"},
+		-- New commands
+		{cmd = "/tp [x y z] or [player]", desc = "Teleport to coordinates or a player"},
+		{cmd = "/fly", desc = "Toggle flight (WASD + Space/Shift to move)"},
+		{cmd = "/flyspeed [amount]", desc = "Set fly speed"},
+		{cmd = "/infjump", desc = "Toggle infinite jump"},
+		{cmd = "/gravity [amount]", desc = "Set workspace gravity"},
+		{cmd = "/jumppower [amount]", desc = "Set your jump power"},
+		{cmd = "/ws [amount]", desc = "Set your WalkSpeed directly"},
+		{cmd = "/time [0-24]", desc = "Set time of day (visual)"},
+		{cmd = "/bright [0-2]", desc = "Set lighting brightness (visual)"},
+		{cmd = "/fog [0-1]", desc = "Set fog density via Atmosphere (visual)"},
+		{cmd = "/fov [1-120]", desc = "Set camera field of view (visual)"},
+		{cmd = "/resetlight", desc = "Reset lighting to default settings"},
+		{cmd = "/heal", desc = "Heal to full health instantly"},
+		{cmd = "/god", desc = "Toggle god mode (infinite health)"},
+		{cmd = "/noclip", desc = "Toggle noclip (walk through walls)"},
+		{cmd = "/invisible (/invis)", desc = "Toggle character invisibility"},
+		{cmd = "/rejoin", desc = "Rejoin the current server"},
 	}
 
 	for _, cmdInfo in ipairs(commandList) do
@@ -3023,6 +3325,209 @@ local function toggleAllAwakening()
 	print("Awakening toggle complete for all moves (Z, X, C, V, F)")
 end
 
+-- ========== NEW UTILITY FUNCTIONS ==========
+
+local flyActive = false
+local flyConnection = nil
+local flySpeed = 50
+
+local function toggleFly()
+	local char = player.Character
+	if not char then return end
+	local humanoid = char:FindFirstChildOfClass("Humanoid")
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not humanoid or not hrp then return end
+
+	flyActive = not flyActive
+
+	if flyActive then
+		print("Fly: ENABLED")
+		local bv = Instance.new("BodyVelocity")
+		bv.Name = "FlyVelocity"
+		bv.MaxForce = Vector3.new(math.huge, math.huge, math.huge)
+		bv.Velocity = Vector3.zero
+		bv.Parent = hrp
+
+		local bg = Instance.new("BodyGyro")
+		bg.Name = "FlyGyro"
+		bg.MaxTorque = Vector3.new(math.huge, math.huge, math.huge)
+		bg.P = 10000
+		bg.CFrame = hrp.CFrame
+		bg.Parent = hrp
+
+		flyConnection = RunService.RenderStepped:Connect(function()
+			if not flyActive or not char.Parent or humanoid.Health <= 0 then
+				if flyConnection then flyConnection:Disconnect() end
+				flyActive = false
+				local oldBv = hrp:FindFirstChild("FlyVelocity")
+				if oldBv then oldBv:Destroy() end
+				local oldBg = hrp:FindFirstChild("FlyGyro")
+				if oldBg then oldBg:Destroy() end
+				return
+			end
+
+			local cam = workspace.CurrentCamera
+			local move = Vector3.zero
+
+			if UserInputService:IsKeyDown(Enum.KeyCode.W) then move = move + cam.CFrame.LookVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.S) then move = move - cam.CFrame.LookVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.A) then move = move - cam.CFrame.RightVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.D) then move = move + cam.CFrame.RightVector end
+			if UserInputService:IsKeyDown(Enum.KeyCode.Space) then move = move + Vector3.new(0, 1, 0) end
+			if UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) then move = move - Vector3.new(0, 1, 0) end
+
+			if move.Magnitude > 0 then move = move.Unit end
+			bv.Velocity = move * flySpeed
+			bg.CFrame = cam.CFrame
+		end)
+	else
+		if flyConnection then flyConnection:Disconnect() end
+		local oldBv = hrp:FindFirstChild("FlyVelocity")
+		if oldBv then oldBv:Destroy() end
+		local oldBg = hrp:FindFirstChild("FlyGyro")
+		if oldBg then oldBg:Destroy() end
+		print("Fly: DISABLED")
+	end
+end
+
+local infJumpActive = false
+local infJumpConnection = nil
+
+local function toggleInfJump()
+	infJumpActive = not infJumpActive
+	if infJumpActive then
+		print("Infinite Jump: ENABLED")
+		infJumpConnection = UserInputService.JumpRequest:Connect(function()
+			if infJumpActive and player.Character then
+				local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+				if humanoid then
+					humanoid:ChangeState(Enum.HumanoidStateType.Jumping)
+				end
+			end
+		end)
+	else
+		if infJumpConnection then infJumpConnection:Disconnect() end
+		print("Infinite Jump: DISABLED")
+	end
+end
+
+-- God mode
+local godModeActive = false
+local godConnection = nil
+
+local function toggleGodMode()
+	local char = player.Character
+	if not char then return end
+	local humanoid = char:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return end
+
+	godModeActive = not godModeActive
+
+	if godModeActive then
+		print("God Mode: ENABLED")
+		humanoid.MaxHealth = math.huge
+		humanoid.Health = math.huge
+		godConnection = RunService.Heartbeat:Connect(function()
+			if not godModeActive or not char or not char.Parent then
+				if godConnection then godConnection:Disconnect() end
+				godModeActive = false
+				return
+			end
+			local hum = char:FindFirstChildOfClass("Humanoid")
+			if hum and hum.Health < hum.MaxHealth then
+				hum.Health = hum.MaxHealth
+			end
+		end)
+	else
+		if godConnection then godConnection:Disconnect() end
+		local hum = char:FindFirstChildOfClass("Humanoid")
+		if hum then
+			hum.MaxHealth = 100
+			hum.Health = 100
+		end
+		print("God Mode: DISABLED")
+	end
+end
+
+-- Noclip
+local noclipActive = false
+local noclipConnection = nil
+
+local function toggleNoclip()
+	local char = player.Character
+	if not char then return end
+
+	noclipActive = not noclipActive
+
+	if noclipActive then
+		print("Noclip: ENABLED")
+		noclipConnection = RunService.Stepped:Connect(function()
+			if not noclipActive or not char or not char.Parent then
+				if noclipConnection then noclipConnection:Disconnect() end
+				noclipActive = false
+				return
+			end
+			for _, part in ipairs(char:GetDescendants()) do
+				if part:IsA("BasePart") then
+					part.CanCollide = false
+				end
+			end
+		end)
+	else
+		if noclipConnection then noclipConnection:Disconnect() end
+		for _, part in ipairs(char:GetDescendants()) do
+			if part:IsA("BasePart") then
+				part.CanCollide = true
+			end
+		end
+		print("Noclip: DISABLED")
+	end
+end
+
+-- Invisible
+local invisibleActive = false
+
+local function toggleInvisible()
+	local char = player.Character
+	if not char then return end
+
+	invisibleActive = not invisibleActive
+
+	for _, part in ipairs(char:GetDescendants()) do
+		if part:IsA("BasePart") and part.Name ~= "HumanoidRootPart" then
+			if invisibleActive then
+				if not part:GetAttribute("OrigTransparency") then
+					part:SetAttribute("OrigTransparency", part.Transparency)
+				end
+				part.Transparency = 1
+			else
+				local orig = part:GetAttribute("OrigTransparency")
+				if orig then
+					part.Transparency = orig
+				end
+			end
+		end
+	end
+	print("Invisible:", invisibleActive and "ENABLED" or "DISABLED")
+end
+
+-- Rejoin
+local function rejoinServer()
+	local ts = game:GetService("TeleportService")
+	ts:Teleport(game.PlaceId, player)
+end
+
+-- Heal
+local function healPlayer()
+	local char = player.Character
+	if not char then return end
+	local humanoid = char:FindFirstChildOfClass("Humanoid")
+	if humanoid then
+		humanoid.Health = humanoid.MaxHealth
+		print("Healed to full health:", humanoid.MaxHealth)
+	end
+end
+
 processCommand = function(message)
 	if not isVerified then return end
 
@@ -3038,8 +3543,8 @@ processCommand = function(message)
 		return
 	end
 
-	-- Kunai (God's Palace): Create dimension 4.2k above and teleport directly
-	if cmd == "/kunai" then
+	-- Kamui (God's Palace): Create dimension 4.2k above and teleport directly
+	if cmd == "/kamui" then
 		local char = player.Character
 		if not char or not char:FindFirstChild("HumanoidRootPart") then return end
 
@@ -3079,8 +3584,8 @@ processCommand = function(message)
 		return
 	end
 
-	-- Kunai2 (Black Hole): Create dimension 4.2k above and teleport directly
-	if cmd == "/kunai2" then
+	-- Kamui2 (Black Hole): Create dimension 4.2k above and teleport directly
+	if cmd == "/kamui2" then
 		local char = player.Character
 		if not char or not char:FindFirstChild("HumanoidRootPart") then return end
 
@@ -3498,6 +4003,596 @@ processCommand = function(message)
 
 	if cmd == "/players" then
 		print("Players GUI command triggered.")
+		return
+	end
+
+	-- ========== NEW COMMANDS ==========
+
+	-- Visual: Set time of day (0-24)
+	if cmd == "/time" then
+		if value and tonumber(value) then
+			Lighting.ClockTime = tonumber(value)
+			print("Time set to:", value)
+		end
+		return
+	end
+
+	-- Visual: Set brightness (0-2)
+	if cmd == "/bright" then
+		if value and tonumber(value) then
+			Lighting.Brightness = tonumber(value)
+			print("Brightness set to:", value)
+		end
+		return
+	end
+
+	-- Visual: Set fog density via Atmosphere
+	if cmd == "/fog" then
+		if value and tonumber(value) then
+			local density = tonumber(value)
+			local atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
+			if not atmosphere then
+				atmosphere = Instance.new("Atmosphere")
+				atmosphere.Parent = Lighting
+			end
+			atmosphere.Density = density
+			print("Fog density set to:", density)
+		end
+		return
+	end
+
+	-- Visual: Set camera FOV
+	if cmd == "/fov" then
+		if value and tonumber(value) then
+			local fov = math.clamp(tonumber(value), 1, 120)
+			workspace.CurrentCamera.FieldOfView = fov
+			print("FOV set to:", fov)
+		end
+		return
+	end
+
+	-- Visual: Reset lighting to default
+	if cmd == "/resetlight" then
+		Lighting.Ambient = Color3.fromRGB(128, 128, 128)
+		Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+		Lighting.Brightness = 1
+		Lighting.ClockTime = 14
+		Lighting.GlobalShadows = true
+		for _, child in ipairs(Lighting:GetChildren()) do
+			if child:IsA("PostEffect") or child:IsA("Atmosphere") then
+				child:Destroy()
+			end
+		end
+		print("Lighting reset to default.")
+		return
+	end
+
+	-- Teleport to coordinates: /tp x y z (or tp to player: /tp playername)
+	if cmd == "/tp" then
+		local x = tonumber(args[2])
+		local y = tonumber(args[3])
+		local z = tonumber(args[4])
+		if x and y and z then
+			local char = player.Character
+			local root = char and char:FindFirstChild("HumanoidRootPart")
+			if root then
+				root.CFrame = CFrame.new(x, y, z)
+				print("Teleported to:", x, y, z)
+			end
+		elseif value then
+			gotoPlayerPartial(value)
+		end
+		return
+	end
+
+	-- Fly toggle (WASD + Space/Shift)
+	if cmd == "/fly" then
+		toggleFly()
+		return
+	end
+
+	-- Set fly speed
+	if cmd == "/flyspeed" then
+		if value and tonumber(value) then
+			flySpeed = tonumber(value)
+			print("Fly speed set to:", flySpeed)
+		end
+		return
+	end
+
+	-- Infinite jump toggle
+	if cmd == "/infjump" then
+		toggleInfJump()
+		return
+	end
+
+	-- Set workspace gravity
+	if cmd == "/gravity" then
+		if value and tonumber(value) then
+			workspace.Gravity = tonumber(value)
+			print("Gravity set to:", value)
+		end
+		return
+	end
+
+	-- Set jump power
+	if cmd == "/jumppower" then
+		if value and tonumber(value) then
+			local char = player.Character
+			if char then
+				local humanoid = char:FindFirstChildOfClass("Humanoid")
+				if humanoid then
+					humanoid.UseJumpPower = true
+					humanoid.JumpPower = tonumber(value)
+					print("Jump power set to:", value)
+				end
+			end
+		end
+		return
+	end
+
+	-- Set walkspeed directly
+	if cmd == "/ws" then
+		if value and tonumber(value) then
+			local char = player.Character
+			if char then
+				local humanoid = char:FindFirstChildOfClass("Humanoid")
+				if humanoid then
+					humanoid.WalkSpeed = tonumber(value)
+					print("WalkSpeed set to:", value)
+				end
+			end
+		end
+		return
+	end
+
+	-- God mode toggle
+	if cmd == "/god" then
+		toggleGodMode()
+		return
+	end
+
+	-- Noclip toggle
+	if cmd == "/noclip" then
+		toggleNoclip()
+		return
+	end
+
+	-- Invisible toggle
+	if cmd == "/invisible" or cmd == "/invis" then
+		toggleInvisible()
+		return
+	end
+
+	-- Rejoin server
+	if cmd == "/rejoin" then
+		rejoinServer()
+		return
+	end
+
+	-- Heal to full
+	if cmd == "/heal" then
+		healPlayer()
+		return
+	end
+
+	-- List all commands
+	if cmd == "/list" or cmd == "/commands" or cmd == "/help" then
+		local commandList = {
+			{"/panel", "Opens the admin GUI panel"},
+			{"/kamui", "Teleport to God's Palace dimension (toggle)"},
+			{"/kamui2", "Teleport to Black Hole dimension (toggle)"},
+			{"/about", "Show info about the admin script"},
+			{"/view", "Toggle first-person view"},
+			{"/unview", "Reset to third-person view"},
+			{"/changespawnpoint /csp", "Change your spawn point"},
+			{"/visit", "Visit a location"},
+			{"/pirate /pirates", "Join pirate team"},
+			{"/marine /marines", "Join marine team"},
+			{"/fun", "Enable fun mode"},
+			{"/unfm", "Remove fun mode"},
+			{"/titles", "Show titles"},
+			{"/speed <num>", "Set walk speed"},
+			{"/ap <num>", "Set attribute points"},
+			{"/vi", "View info"},
+			{"/max", "Max out stats"},
+			{"/f <style>", "Change fighting style"},
+			{"/f2 <style>", "Change fighting style v2"},
+			{"/g2 <style>", "Change fighting style v2 (alt)"},
+			{"/fallstop", "Stop falling"},
+			{"/beli <num>", "Set beli amount"},
+			{"/protect", "Enable protection shield"},
+			{"/protectionstop /unprotect", "Stop protection"},
+			{"/br", "Boss raid"},
+			{"/boat", "Spawn boat"},
+			{"/schoolbus", "Spawn school bus"},
+			{"/busspeed <num>", "Set bus speed"},
+			{"/g <fruit>", "Give fruit"},
+			{"/freecam /fc", "Toggle free camera"},
+			{"/unfreecam /unfc", "Disable free camera"},
+			{"/awakening", "Toggle awakening"},
+			{"/buso", "Toggle buso/observation haki"},
+			{"/spin", "Spin for fruit"},
+			{"/title <title>", "Set title"},
+			{"/raid <name>", "Start a raid"},
+			{"/change", "Change something"},
+			{"/race <name>", "Change race (human/shark/angel/ghoul/cyborg)"},
+			{"/aw", "Toggle awakening"},
+			{"/unaw", "Disable awakening"},
+			{"/players", "List online players"},
+			{"/time <num>", "Set time of day"},
+			{"/bright <num>", "Set brightness"},
+			{"/fog <num>", "Set fog density"},
+			{"/fov <num>", "Set field of view"},
+			{"/resetlight", "Reset lighting to default"},
+			{"/tp <x y z> or <player>", "Teleport to coords or player"},
+			{"/fly", "Toggle fly mode"},
+			{"/flyspeed <num>", "Set fly speed"},
+			{"/infjump", "Toggle infinite jump"},
+			{"/gravity <num>", "Set gravity"},
+			{"/jumppower <num>", "Set jump power"},
+			{"/ws <num>", "Set walk speed"},
+			{"/god", "Toggle god mode (client-side)"},
+			{"/noclip", "Toggle noclip"},
+			{"/invisible /invis", "Toggle invisibility"},
+			{"/rejoin", "Rejoin the server"},
+			{"/heal", "Heal to full health (client-side)"},
+			{"/size <player>", "Resize player's head"},
+			{"/restore <player>", "Restore player's head size"},
+			{"/k <player>", "Kill a player"},
+			{"/s <level>", "Set level"},
+			{"/race2 <player> <race>", "Change another player's race"},
+			{"/st /ast <num>", "Set stat points"},
+			{"/b /beli <num>", "Set beli"},
+			{"/beli2 <num>", "Set beli (alt)"},
+			{"/fragments <num>", "Set fragments"},
+			{"/fragments2 <num>", "Set fragments (alt)"},
+			{"/points <num>", "Set points"},
+			{"/rage", "Set rage to 100"},
+			{"/size2 <num>", "Set size"},
+			{"/sizefruit <num>", "Set fruit size"},
+			{"/exp <num>", "Set experience"},
+			{"/hakis <num>", "Set haki stats"},
+			{"/fun /unfun /opfun /unopfun", "Fun mode toggles"},
+			{"/volley2 /unvolley2", "Volley toggles"},
+			{"/reducecooldown <num>", "Reduce all cooldowns"},
+			{"/fm", "Set full moon"},
+			{"/reset", "Reset character (kill)"},
+			{"/disguise /imp <name>", "Disguise as another player"},
+			{"/rt2", "Refill race energy"},
+			{"/list /commands /help", "Show this command list"},
+		}
+		print("\n========== ADMIN COMMANDS LIST ==========")
+		for _, cmd in ipairs(commandList) do
+			print(string.format("  %-30s %s", cmd[1], cmd[2]))
+		end
+		print("========================================")
+		print("Tip: Press ; (semicolon) to open a private command bar that doesn't broadcast to public chat.")
+		print("Note: /god and /heal are client-side only. /tp has no hard limit but very large distances may rubber-band.")
+		return
+	end
+
+	if not value then return end
+
+	for _, obj in ipairs(findAllByName(value)) do
+		if cmd == "/size" then
+			resizeHead(obj)
+		elseif cmd == "/restore" then
+			restoreHead(obj)
+		elseif cmd == "/k" then
+			killObj(obj)
+		end
+	end
+end
+
+player.Chatted:Connect(processCommand)
+	end
+
+	-- Utilities
+	if cmd == "/awakening" then
+		toggleAwakeningUI()
+		return
+	end
+
+	-- Buso Haki stage
+	if cmd == "/buso" then
+		if value then
+			local stage = tonumber(value)
+			if stage and stage >= 1 and stage <= 5 then
+				ReplicatedStorage.Remotes.CommF_:InvokeServer("ChangeBusoStage", stage)
+				print("Buso stage changed to: " .. stage)
+			else
+				print("Please choose a valid Buso stage between 1 and 5. Example: /buso 5")
+			end
+		end
+		return
+	end
+
+	-- Spin
+	if cmd == "/spin" then
+		local success, err = pcall(function()
+			ReplicatedStorage.Remotes.CommF_:InvokeServer("Cousin", "Buy", "DLCBoxData")
+		end)
+		if success then
+			print("Successfully requested spin: Cousin / Buy / DLCBoxData")
+		else
+			warn("Failed to invoke server: " .. tostring(err))
+		end
+		return
+	end
+
+	-- Title
+	if cmd == "/title" then
+		local titleName = message:sub(#args[1] + 2):match("^%s*(.-)%s*$")
+		if titleName and titleName ~= "" then
+			local success, err = pcall(function()
+				ReplicatedStorage.Remotes.CommF_:InvokeServer("activateTitle", titleName)
+			end)
+			if success then
+				print("Successfully requested title change to: " .. titleName)
+			else
+				warn("Failed to change title: " .. tostring(err))
+			end
+		else
+			print("Usage: /title [TitleName]")
+		end
+		return
+	end
+
+	-- Raid (with auto-correction and pcall protection)
+	if cmd == "/raid" then
+		if value then
+			local raidName = matchRaidName(value)
+			if raidName then
+				print("Auto-corrected '" .. value .. "' to raid: " .. raidName)
+				local commF = getCommF()
+				if commF then
+					local success, err = pcall(function()
+						commF:InvokeServer("RaidsNpc", "Select", raidName)
+					end)
+					if success then
+						print("Raid selected: " .. raidName)
+					else
+						warn("Failed to select raid: " .. tostring(err))
+					end
+				else
+					warn("CommF_ remote not found!")
+				end
+			else
+				local valid = {}
+				for name, _ in pairs(validRaids) do table.insert(valid, name) end
+				print("Invalid raid name! No match for '" .. value .. "'. Valid raids: " .. table.concat(valid, ", "))
+			end
+		else
+			print("Usage: /raid [name] (auto-corrects partial names, e.g., /raid flame, /raid ic)")
+		end
+		return
+	end
+
+	-- Race reroll (renamed to /change)
+	if cmd == "/change" then
+		local success, err = pcall(function()
+			ReplicatedStorage.Remotes.CommF_:InvokeServer("BlackbeardReward", "Reroll", "2")
+		end)
+		if success then
+			print("Successfully requested race reroll!")
+		else
+			warn("Failed to invoke server: " .. tostring(err))
+		end
+		return
+	end
+
+	-- Race change (new /race command with race name argument)
+	if cmd == "/race" then
+		if value then
+			local matchedRace, raceNum = matchRaceName(value)
+			if matchedRace and raceNum then
+				print("Auto-corrected '" .. value .. "' to race: " .. matchedRace .. " (ID: " .. raceNum .. ")")
+				local success, err = pcall(function()
+					ReplicatedStorage.Remotes.CommF_:InvokeServer("Ectoplasm", "Change", raceNum)
+				end)
+				if success then
+					print("Successfully changed race to: " .. matchedRace)
+				else
+					warn("Failed to invoke server: " .. tostring(err))
+				end
+			else
+				local available = {}
+				for name, _ in pairs(raceNames) do table.insert(available, name) end
+				print("Invalid race name! No match for '" .. value .. "'. Available races: " .. table.concat(available, ", "))
+			end
+		else
+			print("Usage: /race [RaceName] (e.g., /race Ghoul, /race Human, /race Cyborg)")
+		end
+		return
+	end
+
+	-- Awaken: toggle awakening for all moves (no fruit name needed)
+	if cmd == "/aw" then
+		print("Toggling awakening ON for all moves (Z, X, C, V, F)")
+		toggleAllAwakening()
+		return
+	end
+
+	-- Un-awaken: toggle awakening OFF for all moves (no fruit name needed)
+	if cmd == "/unaw" then
+		print("Toggling awakening OFF for all moves (Z, X, C, V, F)")
+		toggleAllAwakening()
+		return
+	end
+
+	if cmd == "/players" then
+		print("Players GUI command triggered.")
+		return
+	end
+
+	-- ========== NEW COMMANDS ==========
+
+	-- Visual: Set time of day (0-24)
+	if cmd == "/time" then
+		if value and tonumber(value) then
+			Lighting.ClockTime = tonumber(value)
+			print("Time set to:", value)
+		end
+		return
+	end
+
+	-- Visual: Set brightness (0-2)
+	if cmd == "/bright" then
+		if value and tonumber(value) then
+			Lighting.Brightness = tonumber(value)
+			print("Brightness set to:", value)
+		end
+		return
+	end
+
+	-- Visual: Set fog density via Atmosphere
+	if cmd == "/fog" then
+		if value and tonumber(value) then
+			local density = tonumber(value)
+			local atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
+			if not atmosphere then
+				atmosphere = Instance.new("Atmosphere")
+				atmosphere.Parent = Lighting
+			end
+			atmosphere.Density = density
+			print("Fog density set to:", density)
+		end
+		return
+	end
+
+	-- Visual: Set camera FOV
+	if cmd == "/fov" then
+		if value and tonumber(value) then
+			local fov = math.clamp(tonumber(value), 1, 120)
+			workspace.CurrentCamera.FieldOfView = fov
+			print("FOV set to:", fov)
+		end
+		return
+	end
+
+	-- Visual: Reset lighting to default
+	if cmd == "/resetlight" then
+		Lighting.Ambient = Color3.fromRGB(128, 128, 128)
+		Lighting.OutdoorAmbient = Color3.fromRGB(128, 128, 128)
+		Lighting.Brightness = 1
+		Lighting.ClockTime = 14
+		Lighting.GlobalShadows = true
+		for _, child in ipairs(Lighting:GetChildren()) do
+			if child:IsA("PostEffect") or child:IsA("Atmosphere") then
+				child:Destroy()
+			end
+		end
+		print("Lighting reset to default.")
+		return
+	end
+
+	-- Teleport to coordinates: /tp x y z (or tp to player: /tp playername)
+	if cmd == "/tp" then
+		local x = tonumber(args[2])
+		local y = tonumber(args[3])
+		local z = tonumber(args[4])
+		if x and y and z then
+			local char = player.Character
+			local root = char and char:FindFirstChild("HumanoidRootPart")
+			if root then
+				root.CFrame = CFrame.new(x, y, z)
+				print("Teleported to:", x, y, z)
+			end
+		elseif value then
+			gotoPlayerPartial(value)
+		end
+		return
+	end
+
+	-- Fly toggle (WASD + Space/Shift)
+	if cmd == "/fly" then
+		toggleFly()
+		return
+	end
+
+	-- Set fly speed
+	if cmd == "/flyspeed" then
+		if value and tonumber(value) then
+			flySpeed = tonumber(value)
+			print("Fly speed set to:", flySpeed)
+		end
+		return
+	end
+
+	-- Infinite jump toggle
+	if cmd == "/infjump" then
+		toggleInfJump()
+		return
+	end
+
+	-- Set workspace gravity
+	if cmd == "/gravity" then
+		if value and tonumber(value) then
+			workspace.Gravity = tonumber(value)
+			print("Gravity set to:", value)
+		end
+		return
+	end
+
+	-- Set jump power
+	if cmd == "/jumppower" then
+		if value and tonumber(value) then
+			local char = player.Character
+			if char then
+				local humanoid = char:FindFirstChildOfClass("Humanoid")
+				if humanoid then
+					humanoid.UseJumpPower = true
+					humanoid.JumpPower = tonumber(value)
+					print("Jump power set to:", value)
+				end
+			end
+		end
+		return
+	end
+
+	-- Set walkspeed directly
+	if cmd == "/ws" then
+		if value and tonumber(value) then
+			local char = player.Character
+			if char then
+				local humanoid = char:FindFirstChildOfClass("Humanoid")
+				if humanoid then
+					humanoid.WalkSpeed = tonumber(value)
+					print("WalkSpeed set to:", value)
+				end
+			end
+		end
+		return
+	end
+
+	-- God mode toggle
+	if cmd == "/god" then
+		toggleGodMode()
+		return
+	end
+
+	-- Noclip toggle
+	if cmd == "/noclip" then
+		toggleNoclip()
+		return
+	end
+
+	-- Invisible toggle
+	if cmd == "/invisible" or cmd == "/invis" then
+		toggleInvisible()
+		return
+	end
+
+	-- Rejoin server
+	if cmd == "/rejoin" then
+		rejoinServer()
+		return
+	end
+
+	-- Heal to full
+	if cmd == "/heal" then
+		healPlayer()
 		return
 	end
 
