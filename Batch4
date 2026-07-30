@@ -4259,7 +4259,7 @@ processCommand = function(message)
 			{"/wspeed <mult>", "Set WalkSpeed (16×multiplier)"},
 			{"/setsize <scale>", "Scale character size"},
 			{"/exp <num>", "Set experience"},
-			{"/awtool", "Toggle awakening on held tool"},
+			{"/awfruit", "Toggle awakening on held tool"},
 			{"/funattr /unfun /opfun /unopfun", "Fun attribute toggles"},
 			{"/volley2 /unvolley2", "Volley toggles"},
 			{"/reducecooldown <num>", "Reduce all cooldowns"},
