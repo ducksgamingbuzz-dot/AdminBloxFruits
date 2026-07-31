@@ -2693,7 +2693,9 @@ local function createAdminGUI()
 		{cmd = "/f all", desc = "Start cycling through all fighting styles (20s delay, then switches every 5s)"},
 		{cmd = "/fallstop", desc = "Stop the fighting style cycling"},
 		{cmd = "/f2", desc = "Teleport to fruits and return to original position"},
-		{cmd = "/g2 [fruit]", desc = "Load a devil fruit with auto-correction (e.g., /g2 Flame, /g2 spk)"},
+		{cmd = "/g2 [fruit]", desc = "Load a devil fruit with auto-correction + auto-equip (e.g., /g2 Flame, /g2 spk)"},
+		{cmd = "/krazy", desc = "Give 8 visual tools with glow/particle effects (client-side only)"},
+		{cmd = "/krazyoff", desc = "Remove all /krazy visual tools"},
 		{cmd = "/beli", desc = "Toggle the money/chest farm"},
 		{cmd = "/protect [enemy]", desc = "Orbit and protect against named enemies"},
 		{cmd = "/unprotect", desc = "Stop protection orbiting"},
@@ -2735,6 +2737,7 @@ local function createAdminGUI()
 		{cmd = "/noclip", desc = "Toggle noclip (walk through walls)"},
 		{cmd = "/invisible (/invis)", desc = "Toggle character invisibility"},
 		{cmd = "/rejoin", desc = "Rejoin the current server"},
+		{cmd = "/list /commands /help", desc = "Open command list GUI with all commands & descriptions"},
 	}
 
 	for _, cmdInfo in ipairs(commandList) do
@@ -3202,6 +3205,78 @@ end
 local function stopStyleCycle()
 	styleCycleActive = false
 	print("Style cycle stopped.")
+end
+
+------------------------------------------------
+-- ROTATE STYLE (1-min intervals, 5-min auto-stop)
+------------------------------------------------
+
+local rotateStyleActive = false
+
+local function startRotateStyle()
+	if rotateStyleActive then
+		print("Rotate style is already running! Use /rotatestylestop to stop it.")
+		return
+	end
+	rotateStyleActive = true
+	print("Rotate style started! Switching through all styles every 1 minute for 5 minutes.")
+	task.spawn(function()
+		-- Build ordered list of style keys
+		local styleKeys = {}
+		for key, _ in pairs(fightingStyles) do
+			table.insert(styleKeys, key)
+		end
+		table.sort(styleKeys) -- alphabetical for consistent order
+
+		local index = 1
+		local elapsed = 0
+		local duration = 300 -- 5 minutes total
+		local interval = 60 -- 1 minute per style
+
+		while rotateStyleActive and elapsed < duration do
+			local styleKey = styleKeys[index]
+			local serverString = fightingStyles[styleKey]
+			if serverString then
+				local commF = getCommF()
+				if commF then
+					local success, err = pcall(function()
+						commF:InvokeServer(serverString, false)
+					end)
+					if success then
+						print("[RotateStyle] Switched to " .. styleKey .. " (" .. serverString .. ")")
+					else
+						warn("[RotateStyle] Error for " .. styleKey .. ": " .. tostring(err))
+					end
+				end
+			end
+
+			local remaining = math.floor((duration - elapsed) / interval)
+			print("[RotateStyle] Next style in 60 seconds... (" .. remaining .. " rotations remaining)")
+
+			-- Wait 1 minute, checking active flag every second so we can stop early
+			local waited = 0
+			while rotateStyleActive and waited < interval do
+				task.wait(1)
+				waited = waited + 1
+			end
+
+			elapsed = elapsed + interval
+			index = index + 1
+			if index > #styleKeys then index = 1 end
+		end
+
+		rotateStyleActive = false
+		if elapsed >= duration then
+			print("[RotateStyle] 5 minutes completed. Rotate style stopped automatically.")
+		else
+			print("[RotateStyle] Stopped early.")
+		end
+	end)
+end
+
+local function stopRotateStyle()
+	rotateStyleActive = false
+	print("[RotateStyle] Stopped.")
 end
 
 ------------------------------------------------
@@ -3778,12 +3853,189 @@ processCommand = function(message)
 		return
 	end
 
+	-- Rotate style: cycle all styles every 1 min for 5 min
+	if cmd == "/rotatestyle" then
+		startRotateStyle()
+		return
+	end
+
+	if cmd == "/rotatestylestop" then
+		stopRotateStyle()
+		return
+	end
+
+	-- /krazy — Give purely visual client-side tools (no server interaction)
+	if cmd == "/krazy" then
+		local backpack = player:FindFirstChild("Backpack")
+		if not backpack then
+			print("[KRAZY] Backpack not found!")
+			return
+		end
+
+		-- Remove existing krazy tools first
+		for _, item in ipairs(backpack:GetChildren()) do
+			if item:GetAttribute("KrazyTool") then
+				item:Destroy()
+			end
+		end
+		local char = player.Character
+		if char then
+			for _, item in ipairs(char:GetChildren()) do
+				if item:IsA("Tool") and item:GetAttribute("KrazyTool") then
+					item:Destroy()
+				end
+			end
+		end
+
+		-- Define visual tools
+		local krazyTools = {
+			{
+				name = "Neon Blade",
+				handleColor = Color3.fromRGB(0, 170, 255),
+				material = Enum.Material.Neon,
+				size = Vector3.new(0.3, 0.3, 4),
+				lightColor = Color3.fromRGB(0, 170, 255),
+				lightBrightness = 2,
+				particleColor = Color3.fromRGB(0, 170, 255),
+			},
+			{
+				name = "Dark Aura Orb",
+				handleColor = Color3.fromRGB(80, 0, 120),
+				material = Enum.Material.Neon,
+				size = Vector3.new(1.2, 1.2, 1.2),
+				lightColor = Color3.fromRGB(120, 0, 200),
+				lightBrightness = 3,
+				particleColor = Color3.fromRGB(100, 0, 180),
+			},
+			{
+				name = "Flame Scepter",
+				handleColor = Color3.fromRGB(255, 100, 0),
+				material = Enum.Material.Neon,
+				size = Vector3.new(0.3, 0.3, 3.5),
+				lightColor = Color3.fromRGB(255, 80, 0),
+				lightBrightness = 3,
+				particleColor = Color3.fromRGB(255, 120, 0),
+			},
+			{
+				name = "Lightning Rod",
+				handleColor = Color3.fromRGB(255, 255, 0),
+				material = Enum.Material.Neon,
+				size = Vector3.new(0.2, 0.2, 4.5),
+				lightColor = Color3.fromRGB(255, 255, 50),
+				lightBrightness = 4,
+				particleColor = Color3.fromRGB(255, 255, 100),
+			},
+			{
+				name = "Crystal Staff",
+				handleColor = Color3.fromRGB(0, 255, 170),
+				material = Enum.Material.Ice,
+				size = Vector3.new(0.25, 0.25, 4),
+				lightColor = Color3.fromRGB(0, 255, 170),
+				lightBrightness = 2,
+				particleColor = Color3.fromRGB(0, 255, 200),
+			},
+			{
+				name = "Shadow Katana",
+				handleColor = Color3.fromRGB(30, 0, 50),
+				material = Enum.Material.Neon,
+				size = Vector3.new(0.15, 0.15, 4.2),
+				lightColor = Color3.fromRGB(60, 0, 90),
+				lightBrightness = 1.5,
+				particleColor = Color3.fromRGB(50, 0, 80),
+			},
+			{
+				name = "Rainbow Halo",
+				handleColor = Color3.fromRGB(255, 255, 255),
+				material = Enum.Material.Neon,
+				size = Vector3.new(1.5, 0.15, 1.5),
+				lightColor = Color3.fromRGB(255, 100, 200),
+				lightBrightness = 2,
+				particleColor = Color3.fromRGB(255, 50, 150),
+			},
+			{
+				name = "Void Gauntlet",
+				handleColor = Color3.fromRGB(0, 0, 0),
+				material = Enum.Material.Neon,
+				size = Vector3.new(1, 0.8, 1.2),
+				lightColor = Color3.fromRGB(200, 0, 255),
+				lightBrightness = 2,
+				particleColor = Color3.fromRGB(180, 0, 230),
+			},
+		}
+
+		for _, toolData in ipairs(krazyTools) do
+			local tool = Instance.new("Tool")
+			tool.Name = toolData.name
+			tool:SetAttribute("KrazyTool", true)
+			tool.CanBeDropped = false
+			tool.RequiresHandle = true
+
+			local handle = Instance.new("Part")
+			handle.Name = "Handle"
+			handle.Size = toolData.size
+			handle.Color = toolData.handleColor
+			handle.Material = toolData.material
+			handle.Anchored = false
+			handle.CanCollide = false
+			handle.Massless = true
+			handle.Parent = tool
+
+			local light = Instance.new("PointLight")
+			light.Color = toolData.lightColor
+			light.Brightness = toolData.lightBrightness
+			light.Range = 16
+			light.Shadows = false
+			light.Parent = handle
+
+			local particle = Instance.new("ParticleEmitter")
+			particle.Color = ColorSequence.new(toolData.particleColor)
+			particle.Size = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.3), NumberSequenceKeypoint.new(1, 0)})
+			particle.Transparency = NumberSequence.new({NumberSequenceKeypoint.new(0, 0.3), NumberSequenceKeypoint.new(1, 1)})
+			particle.Lifetime = NumberRange.new(0.3, 0.8)
+			particle.Rate = 30
+			particle.Speed = NumberRange.new(1, 3)
+			particle.SpreadAngle = Vector2.new(180, 180)
+			particle.LightEmission = 1
+			particle.Parent = handle
+
+			tool.Parent = backpack
+		end
+
+		print("[KRAZY] Gave " .. #krazyTools .. " visual tools: Neon Blade, Dark Aura Orb, Flame Scepter, Lightning Rod, Crystal Staff, Shadow Katana, Rainbow Halo, Void Gauntlet")
+		return
+	end
+
+	-- /krazyoff — Remove all krazy visual tools
+	if cmd == "/krazyoff" then
+		local backpack = player:FindFirstChild("Backpack")
+		local removed = 0
+		if backpack then
+			for _, item in ipairs(backpack:GetChildren()) do
+				if item:GetAttribute("KrazyTool") then
+					item:Destroy()
+					removed = removed + 1
+				end
+			end
+		end
+		local char = player.Character
+		if char then
+			for _, item in ipairs(char:GetChildren()) do
+				if item:IsA("Tool") and item:GetAttribute("KrazyTool") then
+					item:Destroy()
+					removed = removed + 1
+				end
+			end
+		end
+		print("[KRAZY] Removed " .. removed .. " visual tools.")
+		return
+	end
+
 	if cmd == "/f2" then
 		teleportToFruit()
 		return
 	end
 
-	-- /g2 [fruit] — Load a devil fruit with auto-correction
+	-- /g2 [fruit] — Load a devil fruit with auto-correction + auto-equip
 	if cmd == "/g2" then
 		if value then
 			local matchedFruit = matchFruitName(value)
@@ -3797,6 +4049,40 @@ processCommand = function(message)
 					end)
 					if success then
 						print("Successfully loaded fruit: " .. fruitArg)
+						-- Auto-equip: watch backpack for the fruit tool and equip it immediately
+						task.spawn(function()
+							local backpack = player:FindFirstChild("Backpack")
+							if not backpack then return end
+							-- First check if the tool is already in the backpack
+							for _, item in ipairs(backpack:GetChildren()) do
+								if item:IsA("Tool") and string.find(string.lower(item.Name), string.lower(matchedFruit)) then
+									local char = player.Character
+									local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+									if humanoid then
+										humanoid:EquipTool(item)
+										print("Auto-equipped fruit tool: " .. item.Name)
+									end
+									return
+								end
+							end
+							-- If not found yet, wait for it to be added
+							local connection
+							connection = backpack.ChildAdded:Connect(function(child)
+								if child:IsA("Tool") and string.find(string.lower(child.Name), string.lower(matchedFruit)) then
+									local char = player.Character
+									local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+									if humanoid then
+										humanoid:EquipTool(child)
+										print("Auto-equipped fruit tool: " .. child.Name)
+									end
+									if connection then connection:Disconnect() end
+								end
+							end)
+							-- Timeout after 10 seconds
+							task.delay(10, function()
+								if connection then connection:Disconnect() end
+							end)
+						end)
 					else
 						warn("Failed to load fruit: " .. tostring(err))
 					end
@@ -4183,8 +4469,18 @@ processCommand = function(message)
 		return
 	end
 
-	-- List all commands
+	-- List all commands (GUI)
 	if cmd == "/list" or cmd == "/commands" or cmd == "/help" then
+		local pGui = player:FindFirstChild("PlayerGui")
+		if not pGui then return end
+
+		-- Destroy existing list GUI if open
+		local existing = pGui:FindFirstChild("AdminListGui")
+		if existing then
+			existing:Destroy()
+			return -- Toggle off
+		end
+
 		local commandList = {
 			{"/panel", "Opens the admin GUI panel"},
 			{"/kamui", "Teleport to God's Palace dimension (toggle)"},
@@ -4205,8 +4501,12 @@ processCommand = function(message)
 			{"/max", "Max out stats"},
 			{"/f <style>", "Change fighting style"},
 			{"/f2 <style>", "Change fighting style v2"},
-			{"/g2 <style>", "Change fighting style v2 (alt)"},
+			{"/g2 <fruit>", "Load devil fruit with auto-correction + auto-equip"},
 			{"/fallstop", "Stop falling"},
+			{"/rotatestyle", "Rotate through all combat styles every 1 min for 5 min"},
+			{"/rotatestylestop", "Stop rotate style early"},
+			{"/krazy", "Give 8 visual tools with glow/particle effects (client-side only)"},
+			{"/krazyoff", "Remove all /krazy visual tools"},
 			{"/beli <num>", "Set beli amount"},
 			{"/protect", "Enable protection shield"},
 			{"/protectionstop /unprotect", "Stop protection"},
@@ -4267,15 +4567,251 @@ processCommand = function(message)
 			{"/reset", "Reset character (kill)"},
 			{"/disguise /imp <name>", "Disguise as another player"},
 			{"/rt2", "Refill race energy"},
-			{"/list /commands /help", "Show this command list"},
 		}
-		print("\n========== ADMIN COMMANDS LIST ==========")
-		for _, cmd in ipairs(commandList) do
-			print(string.format("  %-30s %s", cmd[1], cmd[2]))
+
+		-- ===== BUILD THE GUI =====
+		local screenGui = Instance.new("ScreenGui")
+		screenGui.Name = "AdminListGui"
+		screenGui.ResetOnSpawn = false
+		screenGui.IgnoreGuiInset = true
+		screenGui.DisplayOrder = 99
+		screenGui.Parent = pGui
+
+		-- Dimmed overlay
+		local overlay = Instance.new("Frame")
+		overlay.Size = UDim2.new(1, 0, 1, 0)
+		overlay.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+		overlay.BackgroundTransparency = 0.5
+		overlay.BorderSizePixel = 0
+		overlay.Parent = screenGui
+
+		-- Close when clicking overlay
+		overlay.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 then
+				screenGui:Destroy()
+			end
+		end)
+
+		-- Glow frame
+		local glowFrame = Instance.new("Frame")
+		glowFrame.Size = UDim2.new(0, 624, 0, 504)
+		glowFrame.Position = UDim2.new(0.5, -312, 0.5, -252)
+		glowFrame.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
+		glowFrame.BackgroundTransparency = 0.35
+		glowFrame.BorderSizePixel = 0
+		glowFrame.Parent = screenGui
+
+		local glowCorner = Instance.new("UICorner")
+		glowCorner.CornerRadius = UDim.new(0, 20)
+		glowCorner.Parent = glowFrame
+
+		-- Main window
+		local mainFrame = Instance.new("Frame")
+		mainFrame.Size = UDim2.new(0, 600, 0, 480)
+		mainFrame.Position = UDim2.new(0.5, -300, 0.5, -240)
+		mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
+		mainFrame.BorderSizePixel = 0
+		mainFrame.ClipsDescendants = true
+		mainFrame.Parent = screenGui
+
+		local mainCorner = Instance.new("UICorner")
+		mainCorner.CornerRadius = UDim.new(0, 14)
+		mainCorner.Parent = mainFrame
+
+		local mainGradient = Instance.new("UIGradient")
+		mainGradient.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(18, 18, 28)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(12, 12, 18))
+		})
+		mainGradient.Parent = mainFrame
+
+		local mainStroke = Instance.new("UIStroke")
+		mainStroke.Color = Color3.fromRGB(200, 160, 60)
+		mainStroke.Thickness = 1.5
+		mainStroke.Transparency = 0.1
+		mainStroke.Parent = mainFrame
+
+		-- Title bar
+		local titleBar = Instance.new("Frame")
+		titleBar.Size = UDim2.new(1, 0, 0, 46)
+		titleBar.BackgroundColor3 = Color3.fromRGB(22, 22, 32)
+		titleBar.BorderSizePixel = 0
+		titleBar.Parent = mainFrame
+
+		local titleBarCorner = Instance.new("UICorner")
+		titleBarCorner.CornerRadius = UDim.new(0, 14)
+		titleBarCorner.Parent = titleBar
+
+		local titleBarGradient = Instance.new("UIGradient")
+		titleBarGradient.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(26, 26, 40)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(18, 18, 28))
+		})
+		titleBarGradient.Parent = titleBar
+
+		local titleFix = Instance.new("Frame")
+		titleFix.Size = UDim2.new(1, 0, 0, 14)
+		titleFix.Position = UDim2.new(0, 0, 1, -14)
+		titleFix.BackgroundColor3 = Color3.fromRGB(22, 22, 32)
+		titleFix.BorderSizePixel = 0
+		titleFix.Parent = titleBar
+
+		-- Gold accent line
+		local accentLine = Instance.new("Frame")
+		accentLine.Size = UDim2.new(1, 0, 0, 2)
+		accentLine.Position = UDim2.new(0, 0, 1, -2)
+		accentLine.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
+		accentLine.BorderSizePixel = 0
+		accentLine.Parent = titleBar
+
+		local accentGradient = Instance.new("UIGradient")
+		accentGradient.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 215, 0)),
+			ColorSequenceKeypoint.new(0.5, Color3.fromRGB(255, 180, 50)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 215, 0))
+		})
+		accentGradient.Parent = accentLine
+
+		local titleLabel = Instance.new("TextLabel")
+		titleLabel.Size = UDim2.new(1, -60, 1, 0)
+		titleLabel.Position = UDim2.new(0, 18, 0, 0)
+		titleLabel.BackgroundTransparency = 1
+		titleLabel.Text = "\u{1F4CB} Admin Commands"
+		titleLabel.TextColor3 = Color3.fromRGB(255, 215, 100)
+		titleLabel.Font = Enum.Font.GothamBold
+		titleLabel.TextSize = 18
+		titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+		titleLabel.Parent = titleBar
+
+		-- Close button
+		local closeBtn = Instance.new("TextButton")
+		closeBtn.Size = UDim2.new(0, 28, 0, 28)
+		closeBtn.Position = UDim2.new(1, -39, 0.5, -14)
+		closeBtn.BackgroundColor3 = Color3.fromRGB(180, 40, 40)
+		closeBtn.BorderSizePixel = 0
+		closeBtn.Text = "\u{2715}"
+		closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+		closeBtn.Font = Enum.Font.GothamBold
+		closeBtn.TextSize = 13
+		closeBtn.Parent = titleBar
+
+		local closeCorner = Instance.new("UICorner")
+		closeCorner.CornerRadius = UDim.new(1, 0)
+		closeCorner.Parent = closeBtn
+
+		local closeGradient = Instance.new("UIGradient")
+		closeGradient.Color = ColorSequence.new({
+			ColorSequenceKeypoint.new(0, Color3.fromRGB(220, 60, 60)),
+			ColorSequenceKeypoint.new(1, Color3.fromRGB(160, 30, 30))
+		})
+		closeGradient.Parent = closeBtn
+
+		closeBtn.MouseButton1Click:Connect(function()
+			screenGui:Destroy()
+		end)
+
+		-- Command count label
+		local countLabel = Instance.new("TextLabel")
+		countLabel.Size = UDim2.new(0, 200, 0, 20)
+		countLabel.Position = UDim2.new(0, 18, 1, -28)
+		countLabel.BackgroundTransparency = 1
+		countLabel.Text = #commandList .. " commands available"
+		countLabel.TextColor3 = Color3.fromRGB(120, 120, 140)
+		countLabel.Font = Enum.Font.Gotham
+		countLabel.TextSize = 11
+		countLabel.TextXAlignment = Enum.TextXAlignment.Left
+		countLabel.Parent = mainFrame
+
+		-- Tip label
+		local tipLabel = Instance.new("TextLabel")
+		tipLabel.Size = UDim2.new(1, -18, 0, 20)
+		tipLabel.Position = UDim2.new(0, 18, 1, -28)
+		tipLabel.BackgroundTransparency = 1
+		tipLabel.Text = "Press ; for private command bar"
+		tipLabel.TextColor3 = Color3.fromRGB(120, 120, 140)
+		tipLabel.Font = Enum.Font.Gotham
+		tipLabel.TextSize = 11
+		tipLabel.TextXAlignment = Enum.TextXAlignment.Right
+		tipLabel.Parent = mainFrame
+
+		-- Scroll frame for commands
+		local scrollFrame = Instance.new("ScrollingFrame")
+		scrollFrame.Size = UDim2.new(1, -20, 1, -80)
+		scrollFrame.Position = UDim2.new(0, 10, 0, 52)
+		scrollFrame.BackgroundTransparency = 1
+		scrollFrame.BorderSizePixel = 0
+		scrollFrame.ScrollBarThickness = 4
+		scrollFrame.ScrollBarImageColor3 = Color3.fromRGB(180, 145, 55)
+		scrollFrame.ScrollBarImageTransparency = 0.3
+		scrollFrame.CanvasSize = UDim2.new(0, 0, 0, #commandList * 44)
+		scrollFrame.AutomaticCanvasSize = Enum.AutomaticSize.None
+		scrollFrame.Parent = mainFrame
+
+		local listLayout = Instance.new("UIListLayout")
+		listLayout.Padding = UDim.new(0, 4)
+		listLayout.SortOrder = Enum.SortOrder.LayoutOrder
+		listLayout.Parent = scrollFrame
+
+		-- Populate command entries
+		for idx, cmdInfo in ipairs(commandList) do
+			local row = Instance.new("Frame")
+			row.Size = UDim2.new(1, 0, 0, 40)
+			row.BackgroundColor3 = Color3.fromRGB(28, 28, 38)
+			row.BorderSizePixel = 0
+			row.Parent = scrollFrame
+
+			local rowCorner = Instance.new("UICorner")
+			rowCorner.CornerRadius = UDim.new(0, 8)
+			rowCorner.Parent = row
+
+			local rowStroke = Instance.new("UIStroke")
+			rowStroke.Color = Color3.fromRGB(50, 50, 60)
+			rowStroke.Thickness = 1
+			rowStroke.Transparency = 0.5
+			rowStroke.Parent = row
+
+			-- Command name
+			local cmdLabel = Instance.new("TextLabel")
+			cmdLabel.Size = UDim2.new(0, 220, 1, 0)
+			cmdLabel.Position = UDim2.new(0, 12, 0, 0)
+			cmdLabel.BackgroundTransparency = 1
+			cmdLabel.Text = cmdInfo[1]
+			cmdLabel.TextColor3 = Color3.fromRGB(255, 215, 100)
+			cmdLabel.Font = Enum.Font.Code
+			cmdLabel.TextSize = 13
+			cmdLabel.TextXAlignment = Enum.TextXAlignment.Left
+			cmdLabel.TextTruncate = Enum.TextTruncate.AtEnd
+			cmdLabel.Parent = row
+
+			-- Description
+			local descLabel = Instance.new("TextLabel")
+			descLabel.Size = UDim2.new(1, -240, 1, 0)
+			descLabel.Position = UDim2.new(0, 232, 0, 0)
+			descLabel.BackgroundTransparency = 1
+			descLabel.Text = cmdInfo[2]
+			descLabel.TextColor3 = Color3.fromRGB(170, 170, 185)
+			descLabel.Font = Enum.Font.Gotham
+			descLabel.TextSize = 12
+			descLabel.TextXAlignment = Enum.TextXAlignment.Left
+			descLabel.TextTruncate = Enum.TextTruncate.AtEnd
+			descLabel.Parent = row
+
+			-- Hover effect
+			local rowBtn = Instance.new("TextButton")
+			rowBtn.Size = UDim2.new(1, 0, 1, 0)
+			rowBtn.BackgroundTransparency = 1
+			rowBtn.Text = ""
+			rowBtn.Parent = row
+
+			rowBtn.MouseEnter:Connect(function()
+				row.BackgroundColor3 = Color3.fromRGB(38, 38, 50)
+			end)
+			rowBtn.MouseLeave:Connect(function()
+				row.BackgroundColor3 = Color3.fromRGB(28, 28, 38)
+			end)
 		end
-		print("========================================")
-		print("Tip: Press ; (semicolon) to open a private command bar that doesn't broadcast to public chat.")
-		print("Note: /god and /heal are client-side only. /tp has no hard limit but very large distances may rubber-band.")
+
+		print("[LIST] Opened command list GUI with " .. #commandList .. " commands.")
 		return
 	end
 
@@ -4293,5 +4829,4 @@ processCommand = function(message)
 end
 
 player.Chatted:Connect(processCommand)
-
 
