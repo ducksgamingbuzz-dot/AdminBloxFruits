@@ -53,10 +53,77 @@ local function applyHealthAndEnergy(character, stats)
 			end
 		end
 	end
+	-- Clamp: Health must never exceed MaxHealth, Energy must never exceed MaxValue
+	if humanoid and humanoid.Health > humanoid.MaxHealth then
+		humanoid.Health = humanoid.MaxHealth
+	end
+	if energy and energy.Value > energy.MaxValue then
+		energy.Value = energy.MaxValue
+	end
+end
+
+-- ========== PERSISTENT HEALTH/ENERGY CLAMP ==========
+-- Monitors the character and continuously enforces Health <= MaxHealth
+-- and Energy.Value <= Energy.MaxValue. This catches any server replication
+-- that tries to push Health/Energy above their max after a /s command.
+
+local function attachHealthEnergyClamp(character)
+	if not character then return end
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	local energy = character:FindFirstChildOfClass("IntConstrainedValue")
+
+	if humanoid then
+		humanoid:GetPropertyChangedSignal("Health"):Connect(function()
+			if humanoid.Health > humanoid.MaxHealth then
+				humanoid.Health = humanoid.MaxHealth
+			end
+		end)
+		humanoid:GetPropertyChangedSignal("MaxHealth"):Connect(function()
+			if humanoid.Health > humanoid.MaxHealth then
+				humanoid.Health = humanoid.MaxHealth
+			end
+		end)
+	end
+
+	if energy then
+		energy:GetPropertyChangedSignal("Value"):Connect(function()
+			if energy.Value > energy.MaxValue then
+				energy.Value = energy.MaxValue
+			end
+		end)
+		energy:GetPropertyChangedSignal("MaxValue"):Connect(function()
+			if energy.Value > energy.MaxValue then
+				energy.Value = energy.MaxValue
+			end
+		end)
+	end
+end
+
+-- Attach clamp whenever the local player's character spawns
+player.CharacterAdded:Connect(attachHealthEnergyClamp)
+if player.Character then
+	attachHealthEnergyClamp(player.Character)
+end
+
+local function syncStatsToServer(lvl, specificStat)
+	local CommF_ = game.ReplicatedStorage:FindFirstChild("Remotes")
+		and game.ReplicatedStorage.Remotes:FindFirstChild("CommF_")
+	if not CommF_ then return end
+	task.spawn(function()
+		pcall(function()
+			if specificStat then
+				CommF_:InvokeServer("SetStatPoints", lvl, specificStat)
+			else
+				-- Server's setLevel now handles all stat levels + health/energy atomically
+				CommF_:InvokeServer("SetLevel", lvl)
+			end
+		end)
+	end)
 end
 
 local function setLevel(lvl)
 	if not data or not lvl or lvl >= 9e17 then return end
+	syncStatsToServer(lvl)
 	local levelValue = data:FindFirstChild("Level")
 	if levelValue and levelValue:IsA("ValueBase") then levelValue.Value = lvl end
 	local stats = data:FindFirstChild("Stats")
@@ -65,8 +132,16 @@ local function setLevel(lvl)
 			local statLevel = stat:FindFirstChild("Level")
 			if statLevel and statLevel:IsA("ValueBase") then statLevel.Value = lvl end
 		end
-		applyHealthAndEnergy(player.Character, stats)
 	end
+	-- Health/energy are now handled server-side by setLevel;
+	-- server changes replicate to client automatically.
+	-- Apply locally as immediate visual feedback after a short delay
+	-- so server replication doesn't override with stale values.
+	task.delay(0.5, function()
+		if player.Character and player.Character.Parent then
+			applyHealthAndEnergy(player.Character, data and data:FindFirstChild("Stats"))
+		end
+	end)
 	persistentState.level = lvl
 	persistentState.stats = {}
 	if stats then
@@ -85,9 +160,15 @@ local function setStat(amount, statName)
 	if not stats then return end
 	local stat = stats:FindFirstChild(statName)
 	if not stat then return end
+	syncStatsToServer(amount, statName)
 	local statLevel = stat:FindFirstChild("Level")
 	if statLevel and statLevel:IsA("ValueBase") then statLevel.Value = amount end
-	applyHealthAndEnergy(player.Character, stats)
+	-- Server's setStatPoints handles health/energy; apply locally after delay
+	task.delay(0.5, function()
+		if player.Character and player.Character.Parent then
+			applyHealthAndEnergy(player.Character, data and data:FindFirstChild("Stats"))
+		end
+	end)
 	persistentState.stats[statName] = amount
 end
 
@@ -95,11 +176,17 @@ local function setAllStats(amount)
 	if not data or not amount then return end
 	local stats = data:FindFirstChild("Stats")
 	if not stats then return end
+	syncStatsToServer(amount)
 	for _, stat in stats:GetChildren() do
 		local statLevel = stat:FindFirstChild("Level")
 		if statLevel and statLevel:IsA("ValueBase") then statLevel.Value = amount end
 	end
-	applyHealthAndEnergy(player.Character, stats)
+	-- Server's setLevel handles health/energy; apply locally after delay
+	task.delay(0.5, function()
+		if player.Character and player.Character.Parent then
+			applyHealthAndEnergy(player.Character, data and data:FindFirstChild("Stats"))
+		end
+	end)
 	persistentState.stats = {}
 	for _, stat in stats:GetChildren() do
 		local statLevel = stat:FindFirstChild("Level")
