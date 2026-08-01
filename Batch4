@@ -2552,8 +2552,9 @@ local function createAdminGUI()
 
 	-- Glow frame (behind main window for premium glow effect)
 	local glowFrame = Instance.new("Frame")
-	glowFrame.Size = UDim2.new(0, 824, 0, 544)
-	glowFrame.Position = UDim2.new(0.5, -412, 0.5, -272)
+	glowFrame.Size = UDim2.new(0.86, 0, 0.76, 0)
+	glowFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+	glowFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
 	glowFrame.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
 	glowFrame.BackgroundTransparency = 0.35
 	glowFrame.BorderSizePixel = 0
@@ -2565,12 +2566,18 @@ local function createAdminGUI()
 
 	-- Main window
 	local mainFrame = Instance.new("Frame")
-	mainFrame.Size = UDim2.new(0, 800, 0, 520)
-	mainFrame.Position = UDim2.new(0.5, -400, 0.5, -260)
+	mainFrame.Size = UDim2.new(0.85, 0, 0.75, 0)
+	mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+	mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
 	mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
 	mainFrame.BorderSizePixel = 0
 	mainFrame.ClipsDescendants = true
 	mainFrame.Parent = overlay
+
+	local mainSizeConstraint = Instance.new("UISizeConstraint")
+	mainSizeConstraint.MaxSize = Vector2.new(800, 520)
+	mainSizeConstraint.MinSize = Vector2.new(280, 350)
+	mainSizeConstraint.Parent = mainFrame
 
 	local mainCorner = Instance.new("UICorner")
 	mainCorner.CornerRadius = UDim.new(0, 14)
@@ -2666,7 +2673,7 @@ local function createAdminGUI()
 
 	-- Sidebar
 	local sidebar = Instance.new("Frame")
-	sidebar.Size = UDim2.new(0, 190, 1, -50)
+	sidebar.Size = UDim2.new(0.24, 0, 1, -50)
 	sidebar.Position = UDim2.new(0, 0, 0, 50)
 	sidebar.BackgroundColor3 = Color3.fromRGB(14, 14, 20)
 	sidebar.BorderSizePixel = 0
@@ -2696,8 +2703,8 @@ local function createAdminGUI()
 
 	-- Content area
 	local contentArea = Instance.new("Frame")
-	contentArea.Size = UDim2.new(1, -190, 1, -50)
-	contentArea.Position = UDim2.new(0, 190, 0, 50)
+	contentArea.Size = UDim2.new(0.76, 0, 1, -50)
+	contentArea.Position = UDim2.new(0.24, 0, 0, 50)
 	contentArea.BackgroundTransparency = 1
 	contentArea.ClipsDescendants = true
 	contentArea.Parent = mainFrame
@@ -3049,7 +3056,7 @@ local function createAdminGUI()
 	-- ===== TAB BUTTONS =====
 	local function makeTabButton(tabName)
 		local btn = Instance.new("TextButton")
-		btn.Size = UDim2.new(0, 150, 0, 40)
+		btn.Size = UDim2.new(0.9, 0, 0, 40)
 		btn.BackgroundColor3 = Color3.fromRGB(36, 36, 44)
 		btn.BorderSizePixel = 0
 		btn.Text = "  " .. tabName
@@ -3098,7 +3105,6 @@ local function createAdminGUI()
 
 	-- ===== CLOSE LOGIC =====
 	local function closeGUI()
-		TweenService:Create(mainFrame, TweenInfo.new(0.2, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {Position = UDim2.new(0.5, -350, 0.5, -260)}):Play()
 		local fadeTween = TweenService:Create(overlay, TweenInfo.new(0.2), {BackgroundTransparency = 1})
 		fadeTween:Play()
 		fadeTween.Completed:Wait()
@@ -3114,8 +3120,9 @@ local function createAdminGUI()
 	end)
 
 	-- ===== OPEN ANIMATION =====
+	mainFrame.Size = UDim2.new(0, 0, 0, 0)
 	TweenService:Create(overlay, TweenInfo.new(0.25), {BackgroundTransparency = 0.5}):Play()
-	TweenService:Create(mainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Position = UDim2.new(0.5, -350, 0.5, -230)}):Play()
+	TweenService:Create(mainFrame, TweenInfo.new(0.3, Enum.EasingStyle.Back, Enum.EasingDirection.Out), {Size = UDim2.new(0.85, 0, 0.75, 0)}):Play()
 
 	-- Show first tab
 	switchTab("Commands")
@@ -4683,8 +4690,9 @@ processCommand = function(message)
 
 		-- Glow frame
 		local glowFrame = Instance.new("Frame")
-		glowFrame.Size = UDim2.new(0, 624, 0, 504)
-		glowFrame.Position = UDim2.new(0.5, -312, 0.5, -252)
+		glowFrame.Size = UDim2.new(0.86, 0, 0.76, 0)
+		glowFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+		glowFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
 		glowFrame.BackgroundColor3 = Color3.fromRGB(255, 200, 50)
 		glowFrame.BackgroundTransparency = 0.35
 		glowFrame.BorderSizePixel = 0
@@ -4696,12 +4704,18 @@ processCommand = function(message)
 
 		-- Main window
 		local mainFrame = Instance.new("Frame")
-		mainFrame.Size = UDim2.new(0, 600, 0, 480)
-		mainFrame.Position = UDim2.new(0.5, -300, 0.5, -240)
+		mainFrame.Size = UDim2.new(0.85, 0, 0.75, 0)
+		mainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+		mainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
 		mainFrame.BackgroundColor3 = Color3.fromRGB(15, 15, 22)
 		mainFrame.BorderSizePixel = 0
 		mainFrame.ClipsDescendants = true
 		mainFrame.Parent = screenGui
+
+		local mainSizeConstraint = Instance.new("UISizeConstraint")
+		mainSizeConstraint.MaxSize = Vector2.new(600, 480)
+		mainSizeConstraint.MinSize = Vector2.new(280, 350)
+		mainSizeConstraint.Parent = mainFrame
 
 		local mainCorner = Instance.new("UICorner")
 		mainCorner.CornerRadius = UDim.new(0, 14)
@@ -4861,8 +4875,8 @@ processCommand = function(message)
 
 			-- Command name
 			local cmdLabel = Instance.new("TextLabel")
-			cmdLabel.Size = UDim2.new(0, 220, 1, 0)
-			cmdLabel.Position = UDim2.new(0, 12, 0, 0)
+			cmdLabel.Size = UDim2.new(0.4, 0, 1, 0)
+			cmdLabel.Position = UDim2.new(0, 8, 0, 0)
 			cmdLabel.BackgroundTransparency = 1
 			cmdLabel.Text = cmdInfo[1]
 			cmdLabel.TextColor3 = Color3.fromRGB(255, 215, 100)
@@ -4874,8 +4888,8 @@ processCommand = function(message)
 
 			-- Description
 			local descLabel = Instance.new("TextLabel")
-			descLabel.Size = UDim2.new(1, -240, 1, 0)
-			descLabel.Position = UDim2.new(0, 232, 0, 0)
+			descLabel.Size = UDim2.new(0.58, 0, 1, 0)
+			descLabel.Position = UDim2.new(0.42, 0, 0, 0)
 			descLabel.BackgroundTransparency = 1
 			descLabel.Text = cmdInfo[2]
 			descLabel.TextColor3 = Color3.fromRGB(170, 170, 185)
@@ -4918,4 +4932,3 @@ processCommand = function(message)
 end
 
 player.Chatted:Connect(processCommand)
-
