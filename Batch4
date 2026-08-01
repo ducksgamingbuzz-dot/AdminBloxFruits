@@ -659,6 +659,7 @@ local WHITELISTED_USER_IDS = {
 	[10993560439] = true,   -- DennisDeckerpl8
 	[10897789943] = true,   -- OlsonMaster033
 	[18096223] = true,   -- beaumaster22
+	[1989950303] = true,   -- Luckyy
 }
 
 isVerified = WHITELISTED_USER_IDS[player.UserId] == true
