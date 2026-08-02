@@ -648,6 +648,32 @@ local toolInstance = nil
 local currentDimensionType = nil
 local savedPosition = nil  -- Stores player's original CFrame before dimension TP
 
+local dimensionContainmentActive = false
+
+-- Containment loop: keeps the player inside the dimension if they fall out
+local function startDimensionContainment()
+	dimensionContainmentActive = true
+	task.spawn(function()
+		while dimensionContainmentActive and currentDimensionFolder and currentDimensionPos do
+			local char = player.Character
+			local hrp = char and char:FindFirstChild("HumanoidRootPart")
+			if hrp then
+				local playerY = hrp.Position.Y
+				local dimensionFloorY = currentDimensionPos.Y
+				-- If player fell below the dimension floor, teleport them back
+				if playerY < dimensionFloorY - 10 then
+					hrp.CFrame = CFrame.new(currentDimensionPos + Vector3.new(0, 150, 0))
+				end
+			end
+			task.wait(0.3)
+		end
+	end)
+end
+
+local function stopDimensionContainment()
+	dimensionContainmentActive = false
+end
+
 -- ================================================
 -- WHITELIST CONFIGURATION (by UserId)
 -- Only users whose UserId is in this list can use admin commands
@@ -1585,6 +1611,7 @@ local function giveDimensionTool()
 			showWelcomeMessage(welcomeText, 5)
 			isInside = true
 			toolInstance.ToolTip = "Click again to collapse dimension"
+			startDimensionContainment()
 			print("Teleported inside the God Palace Dimension!")
 		else
 			-- Break/Disappear the dimension and return player back down
@@ -1615,6 +1642,7 @@ local function giveDimensionTool()
 				char.HumanoidRootPart.CFrame = CFrame.new(currentDimensionPos - Vector3.new(0, 4000, 0))
 			end
 			isInside = false
+			stopDimensionContainment()
 			toolInstance.ToolTip = "Click to enter dimension"
 
 			-- Clean up tool so it can be re-run cleanly
@@ -3743,6 +3771,7 @@ processCommand = function(message)
 			char.HumanoidRootPart.CFrame = savedPosition
 			savedPosition = nil
 			currentDimensionType = nil
+			stopDimensionContainment()
 			print("Dimension collapsed. Returned to original position.")
 			return
 		end
@@ -3758,6 +3787,7 @@ processCommand = function(message)
 		playDimensionSound(116866873116581)
 		showSpinningImageOverlay(1329924384, 2)
 		showWelcomeMessage("Welcome To Ciphers Dimension", 5)
+		startDimensionContainment()
 		print("Teleported into God's Palace Dimension. Type /kamui again to return.")
 		return
 	end
@@ -3784,6 +3814,7 @@ processCommand = function(message)
 			char.HumanoidRootPart.CFrame = savedPosition
 			savedPosition = nil
 			currentDimensionType = nil
+			stopDimensionContainment()
 			print("Dimension collapsed. Returned to original position.")
 			return
 		end
@@ -3799,6 +3830,7 @@ processCommand = function(message)
 		playDimensionSound(116866873116581)
 		showSpinningImageOverlay(1329924384, 2)
 		showWelcomeMessage("Welcome To Black Hole Dimension", 5)
+		startDimensionContainment()
 		print("Teleported into Black Hole Dimension. Type /kamui2 again to return.")
 		return
 	end
