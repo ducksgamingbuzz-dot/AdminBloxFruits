@@ -650,6 +650,10 @@ local savedPosition = nil  -- Stores player's original CFrame before dimension T
 
 local dimensionContainmentActive = false
 
+-- ========== GUARD MODE STATE ==========
+local guardActive = false       -- Whether /guard is enabled
+local guardMonitorRunning = false -- Whether the monitor loop is currently running
+
 -- Containment loop: keeps the player inside the dimension if they fall out
 local function startDimensionContainment()
 	dimensionContainmentActive = true
@@ -2798,6 +2802,8 @@ local function createAdminGUI()
 	cmdPad.Parent = commandsPage
 
 	local commandList = {
+		{cmd = "/guard", desc = "Auto-teleport to Kamui dimension when HP < 500 (persists through respawn)"},
+		{cmd = "/unguard", desc = "Deactivate guard mode"},
 		{cmd = "/kamui", desc = "Creates the God's Palace pocket dimension + teleport tool"},
 		{cmd = "/kamui2", desc = "Creates the Black Hole dimension + teleport tool"},
 		{cmd = "/about [player]", desc = "Shows info about a player (Beli, Level, etc.)"},
@@ -3734,6 +3740,118 @@ local function healPlayer()
 	end
 end
 
+-- ========== GUARD MODE: Health monitor that auto-teleports to Kamui dimension ==========
+-- When /guard is active, if the player's HP drops below 500, they are teleported
+-- to the Kamui (God's Palace) dimension. The guard persists across respawns.
+-- Use /unguard to deactivate.
+
+local function teleportToKamuiGuard()
+	local char = player.Character
+	if not char then return false end
+	local hrp = char:FindFirstChild("HumanoidRootPart")
+	if not hrp then return false end
+
+	-- If already inside the dimension, no need to teleport
+	if currentDimensionFolder and currentDimensionPos then
+		local playerY = hrp.Position.Y
+		local dimFloorY = currentDimensionPos.Y
+		if playerY >= dimFloorY - 10 and playerY <= dimFloorY + 500 then
+			return true -- Already in dimension
+			end
+	end
+
+	-- Collapse any existing dimension first
+	if currentDimensionFolder then
+		currentDimensionFolder:Destroy()
+		currentDimensionFolder = nil
+	end
+
+	-- Create the kamui dimension and teleport
+	local currentPos = hrp.Position
+	savedPosition = hrp.CFrame
+	currentDimensionPos = Vector3.new(currentPos.X, currentPos.Y + 4200, currentPos.Z)
+	currentDimensionType = "palace"
+	createPocketDimension(currentDimensionPos)
+
+	-- Keep trying to teleport until we confirm the player is there
+	for attempt = 1, 10 do
+		char = player.Character
+		hrp = char and char:FindFirstChild("HumanoidRootPart")
+		if hrp then
+			hrp.CFrame = CFrame.new(currentDimensionPos + Vector3.new(0, 150, 0))
+			-- Verify we actually arrived
+			task.wait(0.1)
+			if hrp.Position.Y >= currentDimensionPos.Y - 10 then
+				setupCosmicLighting()
+				playDimensionSound(116866873116581)
+				showSpinningImageOverlay(1329924384, 2)
+				showWelcomeMessage("Guard Mode: Teleported to Kamui Dimension", 4)
+				startDimensionContainment()
+				print("[Guard] Successfully teleported to Kamui dimension.")
+				return true
+			end
+		end
+		task.wait(0.2)
+	end
+
+	print("[Guard] Failed to teleport to Kamui dimension after multiple attempts.")
+	return false
+end
+
+local function startGuardMonitor()
+	if guardMonitorRunning then return end -- Already running
+	guardMonitorRunning = true
+
+	task.spawn(function()
+		while guardActive do
+			local char = player.Character
+			local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+
+			if humanoid and humanoid.Health < 500 and humanoid.Health > 0 then
+				-- HP below 500 and alive — teleport to kamui
+				print("[Guard] HP below 500 detected (" .. math.floor(humanoid.Health) .. "). Teleporting to Kamui dimension...")
+				local success = teleportToKamuiGuard()
+				if success then
+					-- Wait until the player leaves the dimension or HP recovers before checking again
+					-- The guard stays active but won't re-trigger while in the dimension
+					while guardActive and currentDimensionFolder do
+						task.wait(0.5)
+					end
+				else
+					-- Teleport failed, wait a bit before retrying
+					task.wait(1)
+				end
+			else
+				task.wait(0.2)
+			end
+		end
+
+		guardMonitorRunning = false
+		print("[Guard] Monitor loop stopped.")
+	end)
+end
+
+local function stopGuardMonitor()
+	guardActive = false
+	-- The monitor loop will exit on its next iteration since guardActive is false
+end
+
+-- Re-attach guard monitor on character respawn
+player.CharacterAdded:Connect(function(character)
+	if guardActive then
+		-- Wait for the character to fully load before restarting the monitor
+		character:WaitForChild("HumanoidRootPart", 15)
+		local humanoid = character:WaitForChild("Humanoid", 15)
+		if humanoid then
+			task.wait(0.5)
+			-- Restart the monitor loop (it may have stopped due to character death)
+			guardMonitorRunning = false -- Reset so startGuardMonitor can run again
+			startGuardMonitor()
+			print("[Guard] Guard mode re-activated after respawn.")
+		end
+	end
+end)
+
 processCommand = function(message)
 	if not isVerified then return end
 
@@ -3746,6 +3864,37 @@ processCommand = function(message)
 	-- Admin GUI toggle
 	if cmd == "/panel" then
 		createAdminGUI()
+		return
+	end
+
+	-- Guard mode: auto-teleport to Kamui dimension when HP < 500
+	if cmd == "/guard" or cmd == "/goard" then
+		if guardActive then
+			print("[Guard] Guard mode is already active! Use /unguard to deactivate.")
+			return
+		end
+		guardActive = true
+		startGuardMonitor()
+
+		-- If HP is already below 500, teleport immediately
+		local char = player.Character
+		local humanoid = char and char:FindFirstChildOfClass("Humanoid")
+		if humanoid and humanoid.Health < 500 and humanoid.Health > 0 then
+			print("[Guard] HP already below 500. Teleporting immediately...")
+			teleportToKamuiGuard()
+		end
+
+		print("[Guard] Guard mode activated! You will be teleported to Kamui dimension when HP drops below 500. Use /unguard to deactivate.")
+		return
+	end
+
+	if cmd == "/unguard" then
+		if not guardActive then
+			print("[Guard] Guard mode is not active.")
+			return
+		end
+		stopGuardMonitor()
+		print("[Guard] Guard mode deactivated.")
 		return
 	end
 
@@ -4611,6 +4760,8 @@ processCommand = function(message)
 
 		local commandList = {
 			{"/panel", "Opens the admin GUI panel"},
+			{"/guard", "Auto-teleport to Kamui dimension when HP < 500 (persists through respawn)"},
+			{"/unguard", "Deactivate guard mode"},
 			{"/kamui", "Teleport to God's Palace dimension (toggle)"},
 			{"/kamui2", "Teleport to Black Hole dimension (toggle)"},
 			{"/about", "Show info about the admin script"},
